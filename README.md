@@ -12,3 +12,67 @@ This will:
  - copy your environment and add any path you pass with the external_libs argument to your PATH in this copy. This environment will be then passed to your subcall
  - monitor your stdout, stderr and return code, raising RuntimeError when the call exits unexpectedly
  - monitor your stdout for certain keyword to interpret as results to load back
+
+## Example usage
+Here is a short example on how to print hello word using this tool
+```python
+>>> import arcpy_extender
+>>> exe = arcpy_extender.Executor(['python.exe', '-c', 'print("hello world!")'])
+>>> exe.info()
+Current settings are:
+  executable          : None  # exe passed, so no need to specify a different executable
+  working directory   : 'C:\xxxx\xxxx_xxxx\xxxx'
+  arguments           : 'C:\Users\xxxxx\miniconda2_64\python.exe'  # Fully resolved python executable path
+                      : '-c'
+                      : 'print("hello world!")'
+  PATH                : 'C:\ProgramData\DockerDesktop\version-bin'
+                      : 'C:\Program Files\Docker\Docker\Resources\bin'
+                      : 'C:\Windows\system32'
+                      : 'C:\Windows'
+>>> exe.run()
+Running 'C:\Users\are014\miniconda2_64\python.exe' externally
+   Working directory 'C:\Temp\Test_data\junk'
+   Executable None
+   Arguments 'C:\Users\are014\miniconda2_64\python.exe -c print("hello world!")'
+   hello world!
+```
+
+The Executor object allows you to control your environment using a simple interface. For example:
+```python
+>>> args = ['sklearn_script.py', 'input.csv', '--outname', 'out.csv', '--clustering_engine', 'GAUSSIAN_MIXTURE']
+>>> external_libs = '../../project_folder/external_libs/'
+>>> py_exe = 'C:/Python27/ArcGISx6410.5/python.exe'
+>>> exe = arcpy_extender.Executor(args, external_libs=external_libs, executable=py_exe)
+>>> exe.info()
+Current settings are:
+  executable          : 'C:\Python27\ArcGISx6410.5\python.exe'  # Our specified python interpreter
+  working directory   : 'C:\xxxx\xxxx_xxxx\xxxx'
+  arguments           : 'C:\xxxx\xxxx_xxxx\xxxx\sklearn_script.py'  # Fully resolved script path
+                      : 'input.csv'
+                      : '--outname'
+                      : out.csv'
+                      : '--clustering_engine'
+                      : 'GAUSSIAN_MIXTURE'
+  PATH                : 'C:\xxxx\project_folder\external_libs\lib\site-packages\osgeo'  # Detected gdal, it will add GDAL_PATH and GDAL_DRIVER_PATH as well
+                      : 'C:\xxxx\project_folder\external_libs\lib\site-packages\osgeo\gdal-data'
+                      : 'C:\xxxx\project_folder\external_libs\lib\site-packages\osgeo\gdalplugins'
+                      : 'C:\xxxx\project_folder\external_libs'  # Fully resolved external_libs path
+                      : 'C:\xxxx\project_folder\external_libs\lib'
+                      : 'C:\xxxx\project_folder\external_libs\lib\site-packages'
+                      : 'C:\ProgramData\DockerDesktop\version-bin'
+                      : 'C:\Program Files\Docker\Docker\Resources\bin'
+                      : 'C:\Windows\system32'
+                      : 'C:\Windows'
+>>> result = exe.run()
+Running 'C:\Users\are014\miniconda2_64\python.exe' externally
+   Working directory 'C:\Temp\Test_data\junk'
+   Executable None
+   Arguments 'C:\Users\are014\miniconda2_64\python.exe -c print("hello world!")'
+   loading data from input.csv
+   preprocessing the data
+   training the GAUSSIAN_MIXTURE model
+   perform prediction
+   RESULT: out.csv  # the stream handler will search for this pattern and return them
+>>> print(result)
+['out.csv']
+```
