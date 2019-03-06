@@ -160,6 +160,14 @@ class Executor(object):
             self._info_printer('PYTHONPATH', self._environ['PYTHONPATH'].split(';'))
         except KeyError:
             pass
+        try:
+            self._info_printer('GDAL_DRIVER_PATH', self._environ['GDAL_DRIVER_PATH'].split(';'))
+        except KeyError:
+            pass
+        try:
+            self._info_printer('GDAL_DATA', self._environ['GDAL_DATA'].split(';'))
+        except KeyError:
+            pass
 
     @staticmethod
     def _info_printer(head, to_print):
