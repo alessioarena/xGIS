@@ -30,16 +30,16 @@ Current settings are:
                       : 'C:\Windows\system32'
                       : 'C:\Windows'
 >>> exe.run()
-Running 'C:\Users\are014\miniconda2_64\python.exe' externally
-   Working directory 'C:\Temp\Test_data\junk'
+Running 'C:\Users\xxxxxx\miniconda2_64\python.exe' externally
+   Working directory 'C:\xxxx\xxxx_xxxx\xxxx'
    Executable None
-   Arguments 'C:\Users\are014\miniconda2_64\python.exe -c print("hello world!")'
+   Arguments 'C:\Users\xxxxxx\miniconda2_64\python.exe -c print("hello world!")'
    hello world!
 ```
 
 The Executor object allows you to control your environment using a simple interface. For example:
 ```python
->>> args = ['sklearn_script.py', 'input.csv', '--outname', 'out.csv', '--clustering_engine', 'GAUSSIAN_MIXTURE']
+>>> args = ['sklearn_script.py', 'input.csv', '--outname', 'out.csv']
 >>> external_libs = '../../project_folder/external_libs/'
 >>> py_exe = 'C:/Python27/ArcGISx6410.5/python.exe'
 >>> exe = arcpy_extender.Executor(args, external_libs=external_libs, executable=py_exe)
@@ -51,8 +51,6 @@ Current settings are:
                       : 'input.csv'
                       : '--outname'
                       : out.csv'
-                      : '--clustering_engine'
-                      : 'GAUSSIAN_MIXTURE'
   PATH                : 'C:\xxxx\project_folder\external_libs\lib\site-packages\osgeo'  # Detected gdal, it will add GDAL_PATH and GDAL_DRIVER_PATH as well
                       : 'C:\xxxx\project_folder\external_libs\lib\site-packages\osgeo\gdal-data'
                       : 'C:\xxxx\project_folder\external_libs\lib\site-packages\osgeo\gdalplugins'
@@ -63,11 +61,16 @@ Current settings are:
                       : 'C:\Program Files\Docker\Docker\Resources\bin'
                       : 'C:\Windows\system32'
                       : 'C:\Windows'
+  PYTHONPATH          : 'C:\xxxx\project_folder\external_libs'
+                      : 'C:\xxxx\project_folder\external_libs\lib'
+                      : 'C:\xxxx\project_folder\external_libs\lib\site-packages'
+  GDAL_DRIVER_PATH    : 'C:\xxxx\project_folder\external_libs\lib\site-packages\osgeo\gdalplugins'
+  GDAL_DATA           : 'C:\xxxx\project_folder\external_libs\lib\site-packages\osgeo\gdal-data'
 >>> result = exe.run()
-Running 'C:\Users\are014\miniconda2_64\python.exe' externally
-   Working directory 'C:\Temp\Test_data\junk'
-   Executable None
-   Arguments 'C:\Users\are014\miniconda2_64\python.exe -c print("hello world!")'
+Running 'C:\xxxx\xxxx_xxxx\xxxx\sklearn_script.py' externally
+   Working directory 'C:\xxxx\xxxx_xxxx\xxxx'
+   Executable 'C:\Python27\ArcGISx6410.5\python.exe'
+   Arguments 'C:\Python27\ArcGISx6410.5\python.exe C:\xxxx\xxxx_xxxx\xxxx\sklearn_script.py input.csv --outname out.csv'
    loading data from input.csv
    preprocessing the data
    training the GAUSSIAN_MIXTURE model
