@@ -1,1 +1,1 @@
-from core import Executor
+from .core import *
