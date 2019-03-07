@@ -34,6 +34,10 @@ class Executor(object):
             other common subfolders (e.g. 'lib', 'bin') may be added if they exists
         cwd : str, optional (default : os.getcwd())
             path to working directory to use for the subprocess call
+        logger : logging.Logger, optional (default : False)
+            logging.Logger to use for stream handling.
+            If False, it will default to an internal logging.Logger
+            If None, logging will be disabled for anything but ERROR and CRITICAL levels
 
         Returns:
         -----------
@@ -165,6 +169,15 @@ class Executor(object):
             raise TypeError("The 'external_libs' argument must be a string or list of strings")
 
     def set_logger(self, i_logger):
+        """Method to set up the Logger used by the object
+        
+        Arguments:
+        -----------
+        i_logger : logging.Logger
+            Logger to use for stream handling
+            if False, it will default to a default internal Logger
+            if None, DEBUG, INFO and WARNING will be suppressed, allowing only ERROR and CRITICAL
+        """
         if isinstance(i_logger, logging.Logger):
             self.logger = i_logger
         elif i_logger is None:
@@ -198,13 +211,12 @@ class Executor(object):
         except KeyError:
             pass
 
-    @staticmethod
-    def _info_printer(head, to_print):
+    def _info_printer(self, head, to_print):
         if isinstance(to_print, (str, unicode)):
-            self.logger.info('  %-20s: %-20s' % (head, to_print))
+            self.logger.info('   %-20s: %-20s' % (head, to_print))
         elif isinstance(to_print, list):
             for s in to_print:
-                self.logger.info('  %-20s: %-20s' % (head, s))
+                self.logger.info('   %-20s: %-20s' % (head, s))
                 head = ''
 
     def run(self):
@@ -285,8 +297,8 @@ class Executor(object):
                 _path.extend(self._check_dir_path(libos_path, 'usr' + os.sep + 'bin'))  # CONDA
                 _path.extend(self._check_dir_path(libos_path, 'mingw-w64' + os.sep + 'bin'))  # CONDA
 
-            self.logger.debug(str(_path))
-            self.logger.debug(str(_pythonpath))
+            self.logger.debug('PATH: {0}'.format(str(_path)))
+            self.logger.debug('PYTHONPATH: {0}'.format(str(_pythonpath)))
             # special case for pip
             if len(_pythonpath) == 2 and _pythonpath[0] == lib_path:
                 _path.extend(_pythonpath)
