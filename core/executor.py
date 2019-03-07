@@ -84,17 +84,21 @@ class Executor(object):
         if not all([isinstance(x, (str, unicode)) for x in cmd_line]):
             list_error = ', '.join(['{0}[{1}]'.format(str(a), type(a)) for a in cmd_line])
             raise TypeError("The 'cmd_line' argument must be a list of strings. You passed: {}".format(list_error))
+        cmd_line = cmd_line[:]
         script = cmd_line.pop(0)
-        for script_path in [os.path.abspath(script), find_executable(script)]:
-            try:
-                if os.path.isfile(script_path):
-                    break
-            except:
-                pass
+        if os.path.isfile(os.path.abspath(script)):
+            script_path = os.path.abspath(script)
+            if script_path.endswith('.exe'):
+                self.set_executable(None)
+        elif find_executable(script) is not None:
+            script_path = find_executable(script)
+            if self.executable is not None:
+                if os.path.basename(self.executable) != os.path.basename(script_path):
+                    self.set_executable(None)
+                else:
+                    script_path = os.path.basename(script_path)
         else:
             raise TypeError('The first argument must be your script/executable. Could not resolve {0}'.format(script))
-        if script.endswith('.exe'):
-            self.set_executable(None)
         self.cmd_line = [script_path] + cmd_line
 
     def set_cwd(self, cwd):
@@ -188,7 +192,7 @@ class Executor(object):
         startupinfo.dwFlags = subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = subprocess.SW_HIDE
 
-        if self.executable is None:
+        if self.executable is None or self.cmd_line[0].endswith('.exe'):
             cmd_line = self.cmd_line
         else:
             cmd_line = [os.path.basename(self.executable)] + self.cmd_line
