@@ -3,7 +3,11 @@ import re
 import logging
 import subprocess
 from distutils.spawn import find_executable
-logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+ch = logging.StreamHandler()
+formatter = logging.Formatter('%(levelname)s: %(message)s')
+ch.setFormatter(formatter)
+logger.addHandler(ch)
 
 
 class Executor(object):
@@ -11,8 +15,9 @@ class Executor(object):
     executable = False
     cwd = os.getcwd()
     _environ = os.environ.copy()
+    logger = logging.getLogger(__name__)
 
-    def __init__(self, cmd_line, executable=False, external_libs=False, cwd=False):
+    def __init__(self, cmd_line, executable=False, external_libs=False, cwd=False, logger=False):
         """Initialize the Executor object setting the parameters for the subprocess call
 
         Arguments:
@@ -43,6 +48,8 @@ class Executor(object):
         self.set_cmd_line(cmd_line)
         # test and set the external_libs folder
         self.set_external_libs(external_libs)
+        # set the logger
+        self.set_logger(logger)
 
     def set_executable(self, executable):
         """Method to set a new executable parameter
@@ -57,10 +64,10 @@ class Executor(object):
         if executable:
             if not isinstance(executable, (str, unicode)):
                 raise TypeError("The 'executable' argument must be a string")
-            logging.debug('input executable kwd: {0}'.format(executable))
-            for exe in [os.path.abspath(executable), os.path.join(self.cwd, executable):
+            self.logger.debug('input executable kwd: {0}'.format(executable))
+            for exe in [os.path.abspath(executable), os.path.join(self.cwd, executable)]:
                 if os.path.isfile(exe) and os.access(exe, os.X_OK):
-                    logging.debug('found matching executable: {0}'.format(exe))
+                    self.logger.debug('found matching executable: {0}'.format(exe))
                     break
             else:
                 raise IOError("The 'executable' argument is not pointing to a valid executable program")
@@ -69,7 +76,7 @@ class Executor(object):
             # for .exe
             self.executable = None
         else:
-            self.executable = self.find_py_exe(True)
+            self.executable = self.find_py_exe(False)
 
     def set_cmd_line(self, cmd_line):
         """Method to set a new cmd_line parameter
@@ -89,19 +96,21 @@ class Executor(object):
             raise TypeError("The 'cmd_line' argument must be a list of strings. You passed: {}".format(list_error))
         cmd_line = cmd_line[:]
         script = cmd_line.pop(0)
-        if os.path.isfile(os.path.abspath(script)):
-            script_path = os.path.abspath(script)
-            if script_path.endswith('.exe'):
-                self.set_executable(None)
-        elif find_executable(script) is not None:
-            script_path = find_executable(script)
-            if self.executable is not None:
-                if os.path.basename(self.executable) != os.path.basename(script_path):
+        for script_path in [os.path.abspath(script), os.path.join(self.cwd, script)]:
+            if os.path.isfile(script_path):
+                if script_path.endswith('.exe'):
                     self.set_executable(None)
-                else:
-                    script_path = os.path.basename(script_path)
+                break
         else:
-            raise TypeError('The first argument must be your script/executable. Could not resolve {0}'.format(script))
+            if find_executable(script) is not None:
+                script_path = find_executable(script)
+                if self.executable is not None:
+                    if os.path.basename(self.executable) != os.path.basename(script_path):
+                        self.set_executable(None)
+                    else:
+                        script_path = os.path.basename(script_path)
+            else:
+                raise TypeError('The first argument must be your script/executable. Could not resolve {0}'.format(script))
         self.cmd_line = [script_path] + cmd_line
 
     def set_cwd(self, cwd):
@@ -155,10 +164,23 @@ class Executor(object):
         else:
             raise TypeError("The 'external_libs' argument must be a string or list of strings")
 
+    def set_logger(self, i_logger):
+        if isinstance(i_logger, logging.Logger):
+            self.logger = i_logger
+        elif i_logger is None:
+            self.logger = logging.getLogger(__name__)
+            self.logger.setLevel(logging.ERROR)
+        elif i_logger is False:
+            self.logger = logging.getLogger(__name__)
+            self.logger.setLevel(logging.INFO)
+
+        else:
+            raise TypeError("The argument 'logger' must be a Logger object, None or False")
+
     def info(self):
         """Method to print all parameters
         """
-        logging.info('Current settings are:')
+        self.logger.info('Current settings are:')
         self._info_printer('executable', str(self.executable))
         self._info_printer('working directory', str(self.cwd))
         self._info_printer('arguments', self.cmd_line)
@@ -179,10 +201,10 @@ class Executor(object):
     @staticmethod
     def _info_printer(head, to_print):
         if isinstance(to_print, (str, unicode)):
-            logging.info('  %-20s: %-20s' % (head, to_print))
+            self.logger.info('  %-20s: %-20s' % (head, to_print))
         elif isinstance(to_print, list):
             for s in to_print:
-                logging.info('  %-20s: %-20s' % (head, s))
+                self.logger.info('  %-20s: %-20s' % (head, s))
                 head = ''
 
     def run(self):
@@ -199,10 +221,10 @@ class Executor(object):
             cmd_line = self.cmd_line
         else:
             cmd_line = [os.path.basename(self.executable)] + self.cmd_line
-        logging.info('Running ' + self.cmd_line[0] + ' externally')
-        logging.info('   Working directory ' + str(self.cwd))
-        logging.info('   Executable ' + str(self.executable))
-        logging.info('   Arguments ' + ' '.join(cmd_line))
+        self.logger.info('Running ' + self.cmd_line[0] + ' externally')
+        self.logger.info('   Working directory ' + str(self.cwd))
+        self.logger.info('   Executable ' + str(self.executable))
+        self.logger.info('   Arguments ' + ' '.join(cmd_line))
 
         run = subprocess.Popen(
             cmd_line,
@@ -225,13 +247,13 @@ class Executor(object):
         if popen.returncode > 0:
             if e:
                 if o:
-                    logging.info(' ' * 2 + o.replace('\n', '\n' + ' ' * 2))
-                logging.error(' ' * 2 + e.replace('\n', '\n' + ' ' * 2))
+                    self.logger.info(' ' * 2 + o.replace('\n', '\n' + ' ' * 2))
+                self.logger.error(' ' * 2 + e.replace('\n', '\n' + ' ' * 2))
             raise RuntimeError('Execution could not be completed return code was ' + str(popen.returncode))
         if o:
-            logging.info(' ' * 2 + o.replace('\n', '\n' + ' ' * 2))
-            results = re.findall('RESULT: (.*)[\r\n]*', o)
-        logging.info('Execution completed!')
+            self.logger.info(' ' * 2 + o.replace('\n', '\n' + ' ' * 2))
+            results = re.findall('RESULT: ([^\r\n]*)', o)
+        self.logger.info('Execution completed!')
 
         if len(results) > 0:
             return results
@@ -263,8 +285,8 @@ class Executor(object):
                 _path.extend(self._check_dir_path(libos_path, 'usr' + os.sep + 'bin'))  # CONDA
                 _path.extend(self._check_dir_path(libos_path, 'mingw-w64' + os.sep + 'bin'))  # CONDA
 
-            logging.debug(str(_path))
-            logging.debug(str(_pythonpath))
+            self.logger.debug(str(_path))
+            self.logger.debug(str(_pythonpath))
             # special case for pip
             if len(_pythonpath) == 2 and _pythonpath[0] == lib_path:
                 _path.extend(_pythonpath)
