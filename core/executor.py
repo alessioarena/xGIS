@@ -35,12 +35,12 @@ class Executor(object):
         out : Executor instance
             Object containing settings (and methods to change them) for the subprocess call. Use Executor.run() to run the task
         """
+        # test and set the working directory
+        self.set_cwd(cwd)
         # test and set executable, defaulting to python interpreter
         self.set_executable(executable)
         # test and set the command line arguments, adding the executable
         self.set_cmd_line(cmd_line)
-        # test and set the working directory
-        self.set_cwd(cwd)
         # test and set the external_libs folder
         self.set_external_libs(external_libs)
 
@@ -57,11 +57,14 @@ class Executor(object):
         if executable:
             if not isinstance(executable, (str, unicode)):
                 raise TypeError("The 'executable' argument must be a string")
-            executable = os.path.abspath(executable)
-            logging.debug(executable)
-            if not os.path.isfile(executable) or not os.access(executable, os.X_OK):
+            logging.debug('input executable kwd: {0}'.format(executable))
+            for exe in [os.path.abspath(executable), os.path.join(self.cwd, executable):
+                if os.path.isfile(exe) and os.access(exe, os.X_OK):
+                    logging.debug('found matching executable: {0}'.format(exe))
+                    break
+            else:
                 raise IOError("The 'executable' argument is not pointing to a valid executable program")
-            self.executable = executable
+            self.executable = exe
         elif executable is None:
             # for .exe
             self.executable = None
@@ -84,6 +87,7 @@ class Executor(object):
         if not all([isinstance(x, (str, unicode)) for x in cmd_line]):
             list_error = ', '.join(['{0}[{1}]'.format(str(a), type(a)) for a in cmd_line])
             raise TypeError("The 'cmd_line' argument must be a list of strings. You passed: {}".format(list_error))
+        cmd_line = cmd_line[:]
         script = cmd_line.pop(0)
         for script_path in [os.path.abspath(script), find_executable(script)]:
             try:
