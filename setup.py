@@ -14,7 +14,7 @@ setup(
     url="https://github.com/alessioarena/arcpy_extender",
     packages=['arcpy_extender'],
     package_dir={'arcpy_extender': 'core'},
-    scripts=['core\setup_external_libs.py'],
+    scripts=['scripts\setup_external_libs.py', 'scripts\getpip.py'],
     package_data={'arcpy_extender': ['*.yml']},
     classifiers=[
         "Programming Language :: Python :: 2",
