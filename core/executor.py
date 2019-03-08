@@ -259,11 +259,11 @@ class Executor(object):
         if popen.returncode > 0:
             if e:
                 if o:
-                    self.logger.info(' ' * 2 + o.replace('\n', '\n' + ' ' * 2))
-                self.logger.error(' ' * 2 + e.replace('\n', '\n' + ' ' * 2))
+                    self.logger.info(' ' * 3 + o.replace('\n', '\n' + ' ' * 3))
+                self.logger.error(' ' * 3 + e.replace('\n', '\n' + ' ' * 3))
             raise RuntimeError('Execution could not be completed return code was ' + str(popen.returncode))
         if o:
-            self.logger.info(' ' * 2 + o.replace('\n', '\n' + ' ' * 2))
+            self.logger.info(' ' * 3 + o.replace('\n', '\n' + ' ' * 3))
             results = re.findall('RESULT: ([^\r\n]*)', o)
         self.logger.info('Execution completed!')
 
