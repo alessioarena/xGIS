@@ -16,9 +16,10 @@ setup(
     package_dir={'arcpy_extender': 'core'},
     scripts=['scripts\setup_external_libs.py', 'scripts\getpip.py'],
     package_data={'arcpy_extender': ['*.yml']},
+    license_file = 'license.txt',
     classifiers=[
         "Programming Language :: Python :: 2",
-        "License :: OSI Approved :: MIT License",
         "Operating System :: OS Independent",
+        "Topic :: Scientific/Engineering :: GIS"
     ],
 )
