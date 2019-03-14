@@ -3,19 +3,15 @@ import re
 import logging
 import subprocess
 from distutils.spawn import find_executable
-logger = logging.getLogger(__name__)
-ch = logging.StreamHandler()
-formatter = logging.Formatter('%(levelname)s: %(message)s')
-ch.setFormatter(formatter)
-logger.addHandler(ch)
-
+import ARClogger
+module_logger = ARClogger.initialise_logger(to_file=False, force=False)
 
 class Executor(object):
     cmd_line = False
     executable = False
     cwd = os.getcwd()
     _environ = os.environ.copy()
-    logger = logging.getLogger(__name__)
+    logger = module_logger
 
     def __init__(self, cmd_line, executable=False, external_libs=False, cwd=False, logger=False):
         """Initialize the Executor object setting the parameters for the subprocess call
@@ -90,14 +86,14 @@ class Executor(object):
                 raise TypeError("The 'executable' argument must be a string")
             self.logger.debug('input executable kwd: {0}'.format(executable))
             exe = self._check_paths(executable, is_executable=True)
-                    self.logger.debug('found matching executable: {0}'.format(exe))
+            self.logger.debug('found matching executable: {0}'.format(exe))
             self.executable = exe
         elif executable is None:
             # for .exe
             self.executable = None
         else:
             try:
-            self.executable = self.find_py_exe(False)
+                self.executable = self.find_py_exe(False)
             except RuntimeError:
                 self.executable = sys.executable
 
@@ -121,17 +117,17 @@ class Executor(object):
         script = cmd_line.pop(0)
         try:
             script_path = self._check_paths(script, is_file=True)
-                if script_path.endswith('.exe'):
-                    self.set_executable(None)
+            if script_path.endswith('.exe'):
+                self.set_executable(None)
         except IOError:
-                script_path = find_executable(script)
+            script_path = find_executable(script)
             if script_path is None:
                 raise TypeError('The first argument must be your script/executable. Could not resolve {0}'.format(script))
-                if self.executable is not None:
-                    if os.path.basename(self.executable) != os.path.basename(script_path):
-                        self.set_executable(None)
-                    else:
-                        script_path = os.path.basename(script_path)
+            if self.executable is not None:
+                if os.path.basename(self.executable) != os.path.basename(script_path):
+                    self.set_executable(None)
+                else:
+                    script_path = os.path.basename(script_path)
 
         self.cmd_line = [script_path] + cmd_line
 
@@ -202,10 +198,10 @@ class Executor(object):
         if isinstance(i_logger, logging.Logger):
             self.logger = i_logger
         elif i_logger is None:
-            self.logger = logging.getLogger(__name__)
+            self.logger = module_logger
             self.logger.setLevel(logging.ERROR)
         elif i_logger is False:
-            self.logger = logging.getLogger(__name__)
+            self.logger = module_logger
             self.logger.setLevel(logging.INFO)
 
         else:
