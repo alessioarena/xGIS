@@ -65,6 +65,7 @@ class Executor(object):
             else:
                 test = lambda x: os.path.isfile(x) and os.access(x, os.X_OK)
                 test_str = 'executable'
+        # testing both the 'local' path and the 'working directory' one
         for d in [os.path.abspath(dir), os.path.join(self.cwd, dir)]:
             if test(d):
                 return d
@@ -81,21 +82,27 @@ class Executor(object):
             if False, it will default to current python interpreter
             if None, it will expect the first item in cmd_line to be an executable(.exe) itself
         """
-        if executable:
-            if not isinstance(executable, (str, unicode)):
-                raise TypeError("The 'executable' argument must be a string")
+        # if we pass a value
+        if isinstance(executable, (str, unicode)):
             self.logger.debug('input executable kwd: {0}'.format(executable))
+            # test if exists and can be executed
             exe = self._check_paths(executable, is_executable=True)
             self.logger.debug('found matching executable: {0}'.format(exe))
+            # assign
             self.executable = exe
+        # if we don't want one (the script IS the executable)
         elif executable is None:
-            # for .exe
             self.executable = None
-        else:
+        # if we want the dafault one
+        elif executable is False:
             try:
+                # search for the one closest to the library os
                 self.executable = self.find_py_exe(False)
             except RuntimeError:
+                # if we don't find one, try using sys.executable (this fails in ArcMap)
                 self.executable = sys.executable
+        else:
+            raise TypeError("The executable argument must be a string, None or False")
 
     def set_cmd_line(self, cmd_line):
         """Method to set a new cmd_line parameter
@@ -108,27 +115,36 @@ class Executor(object):
             the first item will be checked, and it is expected to be a script or your executable.
             In this last case it will trigger a set_executable(None)
         """
+        # args must be a list
         if not isinstance(cmd_line, list):
             raise TypeError("The 'cmd_line' argument must be a list of strings")
+        # in fact must be a list of strings
         if not all([isinstance(x, (str, unicode)) for x in cmd_line]):
             list_error = ', '.join(['{0}[{1}]'.format(str(a), type(a)) for a in cmd_line])
             raise TypeError("The 'cmd_line' argument must be a list of strings. You passed: {}".format(list_error))
-        cmd_line = cmd_line[:]
-        script = cmd_line.pop(0)
+        cmd_line = cmd_line[:]  # to copy the list
+        script = cmd_line.pop(0) # remove the first argument (script/executable) for testing
         try:
+            # is this in any of the folders we know?
             script_path = self._check_paths(script, is_file=True)
+            # it exists, and it is an executable itself, so we need to remove the attribute executable
             if script_path.endswith('.exe'):
                 self.set_executable(None)
         except IOError:
+            # We could not find it in the folders we know, so let's do a system-wide search
             script_path = find_executable(script)
             if script_path is None:
                 raise TypeError('The first argument must be your script/executable. Could not resolve {0}'.format(script))
+            # found it!
             if self.executable is not None:
+                # this is to handle the case when we pass 'python.exe', but we specified one that is different than the one that find_executable returned
                 if os.path.basename(self.executable) != os.path.basename(script_path):
                     self.set_executable(None)
                 else:
+                    # python.exe exists, but we want to use a different one
                     script_path = os.path.basename(script_path)
 
+        # adding back the first item as an absolute path
         self.cmd_line = [script_path] + cmd_line
 
     def set_cwd(self, cwd):
@@ -143,8 +159,10 @@ class Executor(object):
         if cwd:
             if not isinstance(cwd, (str, unicode)):
                 raise TypeError("the 'cwd' argument must a string")
+            # check the path and assign it
             self.cwd = self._check_paths(cwd, is_dir=True)
         else:
+            # default to current working directory
             self.cwd = os.getcwd()
 
     def set_external_libs(self, external_libs):
@@ -161,8 +179,11 @@ class Executor(object):
         """
         # one path passed
         if isinstance(external_libs, (str, unicode)):
+            # check the path
             external_libs = self._check_paths(external_libs, is_dir=True)
+            # copy the environment
             self._environ = os.environ.copy()
+            # now let's add the path_to_libraries that we know
             self._set_lib_path(external_libs)
 
         # multiple paths passed
@@ -181,6 +202,7 @@ class Executor(object):
 
         # no path passed, default to current environment
         elif external_libs is False:
+            # default to a copy of the current environment
             self._environ = os.environ.copy()
         else:
             raise TypeError("The 'external_libs' argument must be a string or list of strings")
@@ -196,11 +218,14 @@ class Executor(object):
             if None, DEBUG, INFO and WARNING will be suppressed, allowing only ERROR and CRITICAL
         """
         if isinstance(i_logger, logging.Logger):
+            # assigning the input logger
             self.logger = i_logger
         elif i_logger is None:
+            # using the default one but muted for INFO, DEBUG and WARNING
             self.logger = module_logger
             self.logger.setLevel(logging.ERROR)
         elif i_logger is False:
+            # using the default one
             self.logger = module_logger
             self.logger.setLevel(logging.INFO)
 
@@ -229,11 +254,15 @@ class Executor(object):
             pass
 
     def _info_printer(self, head, to_print):
+        # head is the line header, like PATH or "working directory"
+        # to_print is the list of info to print
         if isinstance(to_print, (str, unicode)):
             self.logger.info('   %-20s: %-20s' % (head, to_print))
         elif isinstance(to_print, list):
+            # splitting them into multiple lines
             for s in to_print:
                 self.logger.info('   %-20s: %-20s' % (head, s))
+                # removing the line header after the first line
                 head = ''
 
     def run(self):
@@ -242,19 +271,24 @@ class Executor(object):
         To have your result path returned in this way, please make sure to print a line matching this pattern: "RESULT: (.*)\\r\\n"
         e.g. INFO:root: 2018-03-06 12:00:00 blabla RESULT: C:/test_data/result_table.xls
         """
+        # setting up some stuff to hide cmd windows if necessary
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags = subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = subprocess.SW_HIDE
 
+        # prepending the executable if necessary
         if self.executable is None or self.cmd_line[0].endswith('.exe'):
             cmd_line = self.cmd_line
         else:
             cmd_line = [os.path.basename(self.executable)] + self.cmd_line
+
+        # printing some stuff
         self.logger.info('Running ' + self.cmd_line[0] + ' externally')
         self.logger.info('   Working directory ' + str(self.cwd))
         self.logger.info('   Executable ' + str(self.executable))
         self.logger.info('   Arguments ' + ' '.join(cmd_line))
 
+        # now we roll!
         run = subprocess.Popen(
             cmd_line,
             executable=self.executable,
@@ -265,6 +299,7 @@ class Executor(object):
             cwd=self.cwd
         )
 
+        # check that stdout, stderr, return code and return the list of results if any
         result = self._stream_handler(run)
 
         return result
@@ -273,45 +308,64 @@ class Executor(object):
         o, e = popen.communicate()
         results = []
 
+        # something went wrong
         if popen.returncode > 0:
             if e:
                 if o:
+                    # printing the stdout first
                     self.logger.info(' ' * 3 + o.replace('\n', '\n' + ' ' * 3))
+                # now the stderr
                 self.logger.error(' ' * 3 + e.replace('\n', '\n' + ' ' * 3))
+            # killing everything and printing the return code
             raise RuntimeError('Execution could not be completed return code was ' + str(popen.returncode))
+        # all good!
         if o:
             self.logger.info(' ' * 3 + o.replace('\n', '\n' + ' ' * 3))
+            # find the pattern
             results = re.findall('RESULT: ([^\r\n]*)', o)
         self.logger.info('Execution completed!')
 
+        # return the results
         if len(results) > 0:
             return results
         return True
+
 
     def _set_lib_path(self, extlib_path):
         _path = []
         _pythonpath = []
 
         if self._check_dir_path(extlib_path):
+            # C://Tests/blabla/external_libs
             _path.extend(self._check_dir_path(extlib_path))  # CONDA PIP
 
+            # C://Tests/blabla/external_libs/DLLs
             _pythonpath.extend(self._check_dir_path(os.path.join(extlib_path, 'DLLs')))  # CONDA
+            # C://Tests/blabla/external_libs/bin
             _path.extend(self._check_dir_path(os.path.join(extlib_path, 'bin')))  # CONDA
 
+            # C://Tests/blabla/external_libs/lib
             lib_path = self._check_dir_path(os.path.join(extlib_path, 'lib'), True)  # CONDA
             if lib_path:
                 _pythonpath.append(lib_path)
 
+                # C://Tests/blabla/external_libs/lib/site-packages
                 _pythonpath.extend(self._check_dir_path(os.path.join(lib_path, 'site-packages')))  # CONDA PIP
+                # C://Tests/blabla/external_libs/lib/lib-tk
                 _pythonpath.extend(self._check_dir_path(os.path.join(lib_path, 'lib-tk')))  # CONDA
+                # C://Tests/blabla/external_libs/lib/plat-win
                 _pythonpath.extend(self._check_dir_path(os.path.join(lib_path, 'plat-win')))  # CONDA
 
+            # C://Tests/blabla/external_libs/Library
             libos_path = self._check_dir_path(os.path.join(extlib_path, 'Library'), True)
             if libos_path:
                 _path.append(libos_path)
 
+                # C://Tests/blabla/external_libs/Library/bin
                 _path.extend(self._check_dir_path(libos_path, 'bin'))  # CONDA
+                # C://Tests/blabla/external_libs/Library/usr/bin
                 _path.extend(self._check_dir_path(libos_path, 'usr' + os.sep + 'bin'))  # CONDA
+                # C://Tests/blabla/external_libs/Library/mingw-w64/bin
                 _path.extend(self._check_dir_path(libos_path, 'mingw-w64' + os.sep + 'bin'))  # CONDA
 
             self.logger.debug('PATH: {0}'.format(str(_path)))
@@ -331,9 +385,15 @@ class Executor(object):
                 self._environ['PYTHONPATH'] = ';'.join(_pythonpath).encode('utf8')
 
             # special case for GDAL
+            # C://Tests/blabla/external_libs/osgeo or
+            # C://Tests/blabla/external_libs/site-packages/osgeo
             for gdal_path in [os.path.join(os.path.dirname(extlib_path), 'osgeo'), os.path.join(os.path.join(lib_path, 'site-packages'), 'osgeo')]:
                 if os.path.isdir(gdal_path):
+                    # C://Tests/blabla/external_libs/osgeo/gdalplugins or
+                    # C://Tests/blabla/external_libs/site-packages/osgeo/gdalplugins
                     gdal_plugins = self._check_dir_path(os.path.join(gdal_path, 'gdalplugins'), True)
+                    # C://Tests/blabla/external_libs/osgeo/gdal-data or
+                    # C://Tests/blabla/external_libs/site-packages/osgeo/gdal-data
                     gdal_data = self._check_dir_path(os.path.join(gdal_path, 'gdal-data'), True)
                     self._environ['PATH'] = ';'.join([gdal_path, gdal_data, gdal_plugins, self._environ['PATH']]).encode('utf8')
                     self._environ['GDAL_DRIVER_PATH'] = gdal_plugins.encode('utf8')
@@ -375,12 +435,16 @@ class Executor(object):
             exe = ['pythonw.exe']
         else:
             exe = ['python.exe']
-        path = []
-        for fld in os.__file__.split(os.sep):
-            path.append(fld)
-            if path[-1].endswith(':'):  # To handle drives, e.g. C:
-                path.append(os.sep)
-            py_exe_path = os.path.join(*(path + exe))
+        os_path = os.__file__.split(os.sep)
+        path = os_path[:-1]
+        # to handle the drive in a cmd compatible way (C:// and not C:)
+        for i, p in enumerate(os_path):
+            if p.endswith(':'):
+                path[i] = p + os.sep
+        # loop through the directory from os to system dirve
+        while len(path) > 0:
+            py_exe_path = os.path.join(*path + exe)
             if os.path.isfile(py_exe_path):
                 return py_exe_path
+            path.pop(-1)
         raise RuntimeError('Could not find the python executable')
