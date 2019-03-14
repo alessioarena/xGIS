@@ -55,6 +55,26 @@ class Executor(object):
         # set the logger
         self.set_logger(logger)
 
+
+    def _check_paths(self, dir, is_file=False, is_dir=False, is_executable=False):
+        if (is_file + is_dir + is_executable) != 1:
+            raise ValueError("Only one of 'is_file', 'is_folder' and 'is_executable' can be passed")
+        else:
+            if is_file:
+                test = lambda x: os.path.isfile(x)
+                test_str = 'file'
+            elif is_dir:
+                test = lambda x: os.path.isdir(x)
+                test_str = 'directory'
+            else:
+                test = lambda x: os.path.isfile(x) and os.access(x, os.X_OK)
+                test_str = 'executable'
+        for d in [os.path.abspath(dir), os.path.join(self.cwd, dir)]:
+            if test(d):
+                return d
+        else:
+            raise IOError("The argument '{0}' is not pointing to a valid {1}".format(dir, test_str))
+
     def set_executable(self, executable):
         """Method to set a new executable parameter
 
@@ -69,18 +89,17 @@ class Executor(object):
             if not isinstance(executable, (str, unicode)):
                 raise TypeError("The 'executable' argument must be a string")
             self.logger.debug('input executable kwd: {0}'.format(executable))
-            for exe in [os.path.abspath(executable), os.path.join(self.cwd, executable)]:
-                if os.path.isfile(exe) and os.access(exe, os.X_OK):
+            exe = self._check_paths(executable, is_executable=True)
                     self.logger.debug('found matching executable: {0}'.format(exe))
-                    break
-            else:
-                raise IOError("The 'executable' argument is not pointing to a valid executable program")
             self.executable = exe
         elif executable is None:
             # for .exe
             self.executable = None
         else:
+            try:
             self.executable = self.find_py_exe(False)
+            except RuntimeError:
+                self.executable = sys.executable
 
     def set_cmd_line(self, cmd_line):
         """Method to set a new cmd_line parameter
@@ -100,21 +119,20 @@ class Executor(object):
             raise TypeError("The 'cmd_line' argument must be a list of strings. You passed: {}".format(list_error))
         cmd_line = cmd_line[:]
         script = cmd_line.pop(0)
-        for script_path in [os.path.abspath(script), os.path.join(self.cwd, script)]:
-            if os.path.isfile(script_path):
+        try:
+            script_path = self._check_paths(script, is_file=True)
                 if script_path.endswith('.exe'):
                     self.set_executable(None)
-                break
-        else:
-            if find_executable(script) is not None:
+        except IOError:
                 script_path = find_executable(script)
+            if script_path is None:
+                raise TypeError('The first argument must be your script/executable. Could not resolve {0}'.format(script))
                 if self.executable is not None:
                     if os.path.basename(self.executable) != os.path.basename(script_path):
                         self.set_executable(None)
                     else:
                         script_path = os.path.basename(script_path)
-            else:
-                raise TypeError('The first argument must be your script/executable. Could not resolve {0}'.format(script))
+
         self.cmd_line = [script_path] + cmd_line
 
     def set_cwd(self, cwd):
@@ -129,9 +147,7 @@ class Executor(object):
         if cwd:
             if not isinstance(cwd, (str, unicode)):
                 raise TypeError("the 'cwd' argument must a string")
-            if not os.path.isdir(cwd):
-                raise IOError("The 'cwd' argument is not a valid directory")
-            self.cwd = cwd
+            self.cwd = self._check_paths(cwd, is_dir=True)
         else:
             self.cwd = os.getcwd()
 
@@ -149,15 +165,20 @@ class Executor(object):
         """
         # one path passed
         if isinstance(external_libs, (str, unicode)):
-            if not os.path.isdir(external_libs):
-                raise IOError("The 'external_libs' argument is not a valid folder")
+            external_libs = self._check_paths(external_libs, is_dir=True)
             self._environ = os.environ.copy()
-            self._set_lib_path(os.path.abspath(external_libs))
+            self._set_lib_path(external_libs)
 
         # multiple paths passed
         elif isinstance(external_libs, list) and all([isinstance(x, (str, unicode)) for x in external_libs]):
-            if not all([os.path.isdir(x) for x in external_libs]):
-                raise IOError("The 'external_libs' argument has at least one non-valid folder")
+            external_libs_copy = external_libs[:]  # to make a copy
+            external_libs = []
+            for e_l in external_libs_copy:
+                try:
+                    external_libs.append(self._check_paths(e_l, is_dir=True))
+                except IOError:
+                    raise IOError("The 'external_libs' argument has at least one non-valid folder. Couldn't resolve {0}".format(e_l))
+
             self._environ = os.environ.copy()
             for p in external_libs[::-1]:
                 self._set_lib_path(os.path.abspath(p))
