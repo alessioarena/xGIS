@@ -3,11 +3,21 @@ import re
 import logging
 import subprocess
 from distutils.spawn import find_executable
+from time import sleep
+try:
+    import arcpy
+    arcpy.env.autoCancelling = False
+except ImportError:
+    pass
 logger = logging.getLogger(__name__)
 ch = logging.StreamHandler()
 formatter = logging.Formatter('%(levelname)s: %(message)s')
 ch.setFormatter(formatter)
 logger.addHandler(ch)
+
+
+class UserCancelled(Exception):
+    pass
 
 
 class Executor(object):
@@ -229,15 +239,18 @@ class Executor(object):
         startupinfo.dwFlags = subprocess.STARTF_USESHOWWINDOW
         startupinfo.wShowWindow = subprocess.SW_HIDE
 
+        # set subprocess arguments
         if self.executable is None or self.cmd_line[0].endswith('.exe'):
             cmd_line = self.cmd_line
         else:
             cmd_line = [os.path.basename(self.executable)] + self.cmd_line
+        # print execution parameters
         self.logger.info('Running ' + self.cmd_line[0] + ' externally')
         self.logger.info('   Working directory ' + str(self.cwd))
         self.logger.info('   Executable ' + str(self.executable))
         self.logger.info('   Arguments ' + ' '.join(cmd_line))
 
+        # start the non-blocking subprocess
         run = subprocess.Popen(
             cmd_line,
             executable=self.executable,
@@ -248,28 +261,61 @@ class Executor(object):
             cwd=self.cwd
         )
 
-        result = self._stream_handler(run)
-
+        try:
+            # monitor the process in parallel, printing the output stream as it comes
+            result = self._stream_handler(run)
+        except KeyboardInterrupt:  # handle user cancellation
+            run.kill()
+            try:
+                # restore the autoCancelling function in ArcGIS
+                arcpy.env.autoCancelling = True
+            except:
+                pass
+            raise
         return result
 
     def _stream_handler(self, popen):
-        o, e = popen.communicate()
         results = []
+        # monitor and print output stream as it comes
+        for l, r in self._print_stream(popen.stdout):
+            self.logger.info('   {0}'.format(l))
+            results.extend(r)
+            try:
+                # check if user cancelled in ArcGIS
+                if arcpy.env.isCancelled:
+                    self.logger.warning('Detected user cancellation')
+                    raise KeyboardInterrupt
+            except (NameError, AttributeError):
+                pass
 
+        # check the return code for abnormal termination
         if popen.returncode > 0:
-            if e:
-                if o:
-                    self.logger.info(' ' * 3 + o.replace('\n', '\n' + ' ' * 3))
-                self.logger.error(' ' * 3 + e.replace('\n', '\n' + ' ' * 3))
-            raise RuntimeError('Execution could not be completed return code was ' + str(popen.returncode))
-        if o:
-            self.logger.info(' ' * 3 + o.replace('\n', '\n' + ' ' * 3))
-            results = re.findall('RESULT: ([^\r\n]*)', o)
-        self.logger.info('Execution completed!')
+            # if this is the case, print the error stream as well
+            for l, _ in self._print_stream(popen.stderr):
+                self.logger.error('   {0}'.format(l))
 
+            # raise the error code
+            raise subprocess.CalledProcessError(popen.returncode)
+        else:
+            # all good!
+            self.logger.info('Execution completed!')
+
+        try:
+            arcpy.env.autoCancelling = True
+        except:
+            pass
         if len(results) > 0:
             return results
         return True
+
+    @staticmethod
+    def _print_stream(stream):
+        # this is a non-blocking generator that monitors the stream till it reaches the end (end of execution)
+        if stream:
+            for line in iter(stream.readline, ""):
+                result = re.findall('RESULT: ([^\r\n]*)', line)
+                yield line, result
+            stream.close()
 
     def _set_lib_path(self, extlib_path):
         _path = []
