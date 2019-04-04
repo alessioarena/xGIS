@@ -1,9 +1,9 @@
 import os
+import sys
 import re
 import logging
 import subprocess
 from distutils.spawn import find_executable
-from time import sleep
 try:
     import arcpy
     arcpy.env.autoCancelling = False
@@ -11,9 +11,6 @@ except ImportError:
     pass
 import ARClogger
 module_logger = ARClogger.initialise_logger(to_file=False, force=False)
-
-class UserCancelled(Exception):
-    pass
 
 
 class Executor(object):
@@ -61,19 +58,18 @@ class Executor(object):
         # set the logger
         self.set_logger(logger)
 
-
     def _check_paths(self, dir, is_file=False, is_dir=False, is_executable=False):
         if (is_file + is_dir + is_executable) != 1:
             raise ValueError("Only one of 'is_file', 'is_folder' and 'is_executable' can be passed")
         else:
             if is_file:
-                test = lambda x: os.path.isfile(x)
+                test = lambda x: os.path.isfile(x)  # noqa: E731
                 test_str = 'file'
             elif is_dir:
-                test = lambda x: os.path.isdir(x)
+                test = lambda x: os.path.isdir(x)  # noqa: E731
                 test_str = 'directory'
             else:
-                test = lambda x: os.path.isfile(x) and os.access(x, os.X_OK)
+                test = lambda x: os.path.isfile(x) and os.access(x, os.X_OK)  # noqa: E731
                 test_str = 'executable'
         # testing both the 'local' path and the 'working directory' one
         for d in [os.path.abspath(dir), os.path.join(self.cwd, dir)]:
@@ -133,7 +129,7 @@ class Executor(object):
             list_error = ', '.join(['{0}[{1}]'.format(str(a), type(a)) for a in cmd_line])
             raise TypeError("The 'cmd_line' argument must be a list of strings. You passed: {}".format(list_error))
         cmd_line = cmd_line[:]  # to copy the list
-        script = cmd_line.pop(0) # remove the first argument (script/executable) for testing
+        script = cmd_line.pop(0)  # remove the first argument (script/executable) for testing
         try:
             # is this in any of the folders we know?
             script_path = self._check_paths(script, is_file=True)
@@ -219,7 +215,7 @@ class Executor(object):
 
     def set_logger(self, i_logger):
         """Method to set up the Logger used by the object
-        
+
         Arguments:
         -----------
         i_logger : logging.Logger
