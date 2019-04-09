@@ -4,9 +4,9 @@ import re
 import logging
 import subprocess
 from distutils.spawn import find_executable
+from time import sleep
 try:
     import arcpy
-    arcpy.env.autoCancelling = False
 except ImportError:
     pass
 import ARClogger
@@ -19,6 +19,7 @@ class Executor(object):
     cwd = os.getcwd()
     _environ = os.environ.copy()
     logger = module_logger
+    host = None
 
     def __init__(self, cmd_line, executable=False, external_libs=False, cwd=False, logger=False):
         """Initialize the Executor object setting the parameters for the subprocess call
@@ -47,6 +48,8 @@ class Executor(object):
         out : Executor instance
             Object containing settings (and methods to change them) for the subprocess call. Use Executor.run() to run the task
         """
+        # detect the host
+        self.detect_host()
         # test and set the working directory
         self.set_cwd(cwd)
         # test and set executable, defaulting to python interpreter
@@ -57,6 +60,13 @@ class Executor(object):
         self.set_external_libs(external_libs)
         # set the logger
         self.set_logger(logger)
+
+    def detect_host(self):
+        try:
+            arcpy
+            self.host = 'arcgis'
+        except NameError:
+            pass
 
     def _check_paths(self, dir, is_file=False, is_dir=False, is_executable=False):
         if (is_file + is_dir + is_executable) != 1:
@@ -271,12 +281,26 @@ class Executor(object):
                 # removing the line header after the first line
                 head = ''
 
+    def _context_manager(run_func):
+        # This will help with temporary settings for the run depending on your host
+        def do_context(self):
+            try:
+                if self.host == 'arcgis':
+                    arcpy.env.autoCancelling = False
+                run_func(self)
+            finally:
+                if self.host == 'arcgis':
+                    arcpy.env.autoCancelling = True
+        return do_context
+
+    @_context_manager
     def run(self):
         """Execute the task using the current configuration
         It returns a list of string obtained by scanning through the subprocess output stream.
         To have your result path returned in this way, please make sure to print a line matching this pattern: "RESULT: (.*)\\r\\n"
         e.g. INFO:root: 2018-03-06 12:00:00 blabla RESULT: C:/test_data/result_table.xls
         """
+
         # setting up some stuff to hide cmd windows if necessary
         startupinfo = subprocess.STARTUPINFO()
         startupinfo.dwFlags = subprocess.STARTF_USESHOWWINDOW
@@ -304,16 +328,13 @@ class Executor(object):
             cwd=self.cwd
         )
 
+        self.logger.info('   ***** SubProcess Started *****')
         try:
             # monitor the process in parallel, printing the output stream as it comes
             result = self._stream_handler(run)
         except KeyboardInterrupt:  # handle user cancellation
             run.kill()
-            try:
-                # restore the autoCancelling function in ArcGIS
-                arcpy.env.autoCancelling = True
-            except:
-                pass
+            self.logger.info('   ***** SubProcess Killed *****')
             raise
         return result
 
@@ -326,27 +347,27 @@ class Executor(object):
             try:
                 # check if user cancelled in ArcGIS
                 if arcpy.env.isCancelled:
-                    self.logger.warning('Detected user cancellation')
+                    self.logger.warning('   Detected user cancellation')
                     raise KeyboardInterrupt
             except (NameError, AttributeError):
                 pass
 
-        # check the return code for abnormal termination
+        # wait for the subprocess to actually finish
+        while popen.poll() is None:
+            None
+        # check the return code for abnormal
         if popen.returncode > 0:
+            self.logger.warning('   ***** SubProcess Failed *****')
             # if this is the case, print the error stream as well
             for l, _ in self._print_stream(popen.stderr):
-                self.logger.error('   {0}'.format(l))
+                self.logger.warning('   {0}'.format(l))  # TODO ArcGIS exits after the first AddError is called. Need to find a solution to still print the entire traceback to stderr
 
             # raise the error code
-            raise subprocess.CalledProcessError(popen.returncode)
+            raise RuntimeError('External execution failed with a return error code {0}'.format(popen.returncode))
         else:
             # all good!
-            self.logger.info('Execution completed!')
+            self.logger.info('   ***** SubProcess Completed *****')
 
-        try:
-            arcpy.env.autoCancelling = True
-        except:
-            pass
         if len(results) > 0:
             return results
         return True
@@ -358,7 +379,8 @@ class Executor(object):
             for line in iter(stream.readline, ""):
                 result = re.findall('RESULT: ([^\r\n]*)', line)
                 yield line, result
-            stream.close()
+                sleep(0.05)  # To make sure to read the entire stream
+            # stream.close()
 
     def _set_lib_path(self, extlib_path):
         _path = []
