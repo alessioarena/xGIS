@@ -281,19 +281,20 @@ class Executor(object):
                 # removing the line header after the first line
                 head = ''
 
-    def _context_manager(run_func):
+    def _host_management(run_func):
         # This will help with temporary settings for the run depending on your host
         def do_context(self):
             try:
                 if self.host == 'arcgis':
                     arcpy.env.autoCancelling = False
-                run_func(self)
+                result = run_func(self)
+                return result
             finally:
                 if self.host == 'arcgis':
                     arcpy.env.autoCancelling = True
         return do_context
 
-    @_context_manager
+    @_host_management
     def run(self):
         """Execute the task using the current configuration
         It returns a list of string obtained by scanning through the subprocess output stream.
