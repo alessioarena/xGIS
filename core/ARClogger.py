@@ -1,5 +1,6 @@
 import sys
 import os
+import re
 import operator
 import threading
 import warnings
@@ -9,8 +10,32 @@ try:
 except ImportError:
     pass
 import logging
+# reload(logging)  # This is to reset the ROOT logger in case you call this module twice
 logging.captureWarnings(True)
 logger = logging.getLogger(__name__)
+
+
+class LogToLevel(object):
+    logger = None
+    internal_level = None
+    external_level = None
+    valid_levels = [logging.NOTSET, logging.DEBUG, logging.INFO, logging.WARNING, logging.ERROR, logging.CRITICAL]
+
+    def __init__(self, logger, level):
+        if not isinstance(logger, logging.Logger):
+            raise TypeError('The argument logger must be a valid logging.Logger')
+        if not isinstance(level, int) or level not in self.valid_levels:
+            raise ValueError('the argument level must be a valid logging level. Accepted values are {0}'.format(self.valid_levels))
+        self.logger = logger
+        self.external_level = self.logger.level
+        self.internal_level = level
+
+    def __enter__(self):
+        self.logger.level = self.internal_level
+        return self.logger
+
+    def __exit__(self, *args):
+        self.logger.level = self.external_level
 
 
 class ConditionalFilter(logging.Filter):
@@ -36,9 +61,14 @@ class ARCMessageHandler(logging.Handler):
 
     def emit(self, message):
         log_entry = self.format(message)
-        log_entry = log_entry.replace('\n', '\n' + ' ' * 26)
+        # log_entry = 'LINE' + log_entry
+        if not log_entry.strip():  # to handle empty lines
+            return
+        log_entry = log_entry.replace('\n', '\n' + ' ' * 16)
+        log_entry = re.sub(r'(?:(?:\r\n|\r|\n)\s*)+', '\r\n', log_entry)  # to handle multiline with empty lines
+        log_entry = re.sub(r'(?:\r\n|\r|\n)$', '', log_entry)
         try:
-            AddMessage(log_entry)  # this should print to stout by default, but also retrieved by ArcMAP
+            AddMessage(log_entry)  # this should print to stdout by default, but also retrieved by ArcMAP
         except NameError:
             sys.stdout.write(log_entry + '\n')  # Fallback if arcpy cannot be loaded
         return
@@ -54,7 +84,11 @@ class ARCWarningHandler(logging.Handler):
 
     def emit(self, message):
         log_entry = self.format(message)
-        log_entry = log_entry.replace('\n', '\n' + ' ' * 26)
+        if not log_entry.strip():
+            return
+        log_entry = log_entry.replace('\n', '\n' + ' ' * 16)  # This offsets multiline
+        log_entry = re.sub(r'(?:(?:\r\n|\r|\n)\s*)+', '\r\n', log_entry)  # to handle multiline with empty lines
+        log_entry = re.sub(r'(?:\r\n|\r|\n)$', '', log_entry)  # to suppress the last new line (will be appended by the function to emit the message)
         try:
             AddWarning(log_entry)  # Retrieved by ArcMAP, but only visualized differently
         except NameError:
@@ -72,7 +106,11 @@ class ARCErrorHandler(logging.Handler):
 
     def emit(self, message):
         log_entry = self.format(message)
-        log_entry = log_entry.replace('\n', '\n' + ' ' * 26)
+        if not log_entry.strip():
+            return
+        log_entry = log_entry.replace('\n', '\n' + ' ' * 16)  # This offsets multiline
+        log_entry = re.sub(r'(?:(?:\r\n|\r|\n)\s*)+', '\r\n', log_entry)  # to handle multiline with empty lines
+        log_entry = re.sub(r'(?:\r\n|\r|\n)$', '', log_entry)  # to suppress the last new line (will be appended by the function to emit the message)
         try:
             AddError(log_entry)  # Retrieved by ArcMAP and handled properly
         except NameError:
@@ -84,8 +122,12 @@ class ARCFileHandler(logging.FileHandler):
     def emit(self, message):
         try:
             msg = self.format(message)
-            msg = msg.replace('\n', '\n' + ' ' * 26)
-            msg = msg.replace('\r', '')  # To remove extra carriage returns, assuming that end of line will be \r\n
+            if not msg.strip():
+                return
+            msg = msg.replace('\n', '\n' + ' ' * 16)
+            msg = re.sub(r'(?:(?:\r\n|\r|\n)\s*)+', '\r\n', msg)  # to handle multiline with empty lines
+            msg = re.sub(r'(?:\r\n|\r|\n)$', '', msg)
+            # msg = msg.replace('\r', '')  # To remove extra carriage returns, assuming that end of line will be \r\n
             stream = self.stream
             fs = "%s\n"
             if not logging._unicode:  # if no unicode support...
