@@ -10,7 +10,7 @@ try:
 except ImportError:
     pass
 import ARClogger
-module_logger = ARClogger.initialise_logger(to_file=False, force=False)
+module_logger = ARClogger.initialise_logger(to_file=False, force=True)
 
 
 class Executor(object):
