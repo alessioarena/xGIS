@@ -92,6 +92,8 @@ class ARCWarningHandler(logging.Handler):
         try:
             AddWarning(log_entry)  # Retrieved by ArcMAP, but only visualized differently
         except NameError:
+            sys.stdout.write(log_entry + '\n')  # Fallback if arcpy cannot be loaded
+            # warnings is too messy
             warnings.warn(log_entry + '\n')  # This is not retrieved by ArcMAP, but handled properly by python
         return
 
