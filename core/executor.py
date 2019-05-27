@@ -12,6 +12,10 @@ except ImportError:
 import ARClogger
 module_logger = ARClogger.initialise_logger(to_file=False, force=True)
 
+# custom error for abnormal process termination
+class ExternalExecutionError(Exception):
+    pass
+
 
 class Executor(object):
     cmd_line = False
@@ -21,6 +25,7 @@ class Executor(object):
     logger = module_logger
     host = None
 
+    # initialise
     def __init__(self, cmd_line, executable=False, external_libs=False, cwd=False, logger=False):
         """Initialize the Executor object setting the parameters for the subprocess call
 
@@ -61,6 +66,7 @@ class Executor(object):
         # set the logger
         self.set_logger(logger)
 
+    # method to set the host attribute (currently only arcgis)
     def detect_host(self):
         try:
             arcpy
@@ -68,10 +74,12 @@ class Executor(object):
         except NameError:
             pass
 
+    # general internal method to check input path
     def _check_paths(self, dir, is_file=False, is_dir=False, is_executable=False):
         if (is_file + is_dir + is_executable) != 1:
             raise ValueError("Only one of 'is_file', 'is_folder' and 'is_executable' can be passed")
         else:
+            # set the test function
             if is_file:
                 test = lambda x: os.path.isfile(x)  # noqa: E731
                 test_str = 'file'
@@ -81,6 +89,7 @@ class Executor(object):
             else:
                 test = lambda x: os.path.isfile(x) and os.access(x, os.X_OK)  # noqa: E731
                 test_str = 'executable'
+        # run the test function
         # testing both the 'local' path and the 'working directory' one
         for d in [os.path.abspath(dir), os.path.join(self.cwd, dir)]:
             if test(d):
@@ -88,6 +97,7 @@ class Executor(object):
         else:
             raise IOError("The argument '{0}' is not pointing to a valid {1}".format(dir, test_str))
 
+    # method to set the executable
     def set_executable(self, executable):
         """Method to set a new executable parameter
 
@@ -120,6 +130,7 @@ class Executor(object):
         else:
             raise TypeError("The executable argument must be a string, None or False")
 
+    # method to set the list of command line arguments
     def set_cmd_line(self, cmd_line):
         """Method to set a new cmd_line parameter
 
@@ -163,6 +174,7 @@ class Executor(object):
         # adding back the first item as an absolute path
         self.cmd_line = [script_path] + cmd_line
 
+    # method to set the working directory
     def set_cwd(self, cwd):
         """Method to set a new cwd parameter
 
@@ -181,6 +193,7 @@ class Executor(object):
             # default to current working directory
             self.cwd = os.getcwd()
 
+    # method to set the path and subpaths to directory containing a local installation of libraries
     def set_external_libs(self, external_libs):
         """Method to create a new environment to be passed to the subprocess call
 
@@ -223,6 +236,7 @@ class Executor(object):
         else:
             raise TypeError("The 'external_libs' argument must be a string or list of strings")
 
+    # method to set the logger that will handle streams at the host level
     def set_logger(self, i_logger):
         """Method to set up the Logger used by the object
 
@@ -248,6 +262,7 @@ class Executor(object):
         else:
             raise TypeError("The argument 'logger' must be a Logger object, None or False")
 
+    # method to summarise attributes currently set for this instance
     def info(self):
         """Method to print all parameters
         """
@@ -269,6 +284,7 @@ class Executor(object):
         except KeyError:
             pass
 
+    # internal method to print the info
     def _info_printer(self, head, to_print):
         # head is the line header, like PATH or "working directory"
         # to_print is the list of info to print
@@ -281,6 +297,7 @@ class Executor(object):
                 # removing the line header after the first line
                 head = ''
 
+    # context manager used for the run method
     def _host_management(run_func):
         # This will help with temporary settings for the run depending on your host
         def do_context(self):
@@ -294,6 +311,7 @@ class Executor(object):
                     arcpy.env.autoCancelling = True
         return do_context
 
+    # core method
     @_host_management
     def run(self):
         """Execute the task using the current configuration
@@ -339,6 +357,7 @@ class Executor(object):
             raise
         return result
 
+    # internal handler that monitors stdout, cancels the job following user request and print stderr as required
     def _stream_handler(self, popen):
         results = []
         # monitor and print output stream as it comes
@@ -364,7 +383,8 @@ class Executor(object):
                 self.logger.warning('   {0}'.format(l))  # TODO ArcGIS exits after the first AddError is called. Need to find a solution to still print the entire traceback to stderr
 
             # raise the error code
-            raise RuntimeError('External execution failed with a return error code {0}'.format(popen.returncode))
+            sys.tracebacklimit = 0
+            raise ExternalExecutionError('External execution failed with a return error code {0}'.format(popen.returncode))
         else:
             # all good!
             self.logger.info('   ***** SubProcess Completed *****')
@@ -373,6 +393,7 @@ class Executor(object):
             return results
         return True
 
+    # internal printer generator used in _stream_handler
     @staticmethod
     def _print_stream(stream):
         # this is a non-blocking generator that monitors the stream till it reaches the end (end of execution)
@@ -383,6 +404,7 @@ class Executor(object):
                 sleep(0.05)  # To make sure to read the entire stream
             # stream.close()
 
+    # internal method to discover and set subpath for the external libraries. This will modify the environment copy
     def _set_lib_path(self, extlib_path):
         _path = []
         _pythonpath = []
@@ -455,6 +477,7 @@ class Executor(object):
         else:
             raise IOError('The path {0} could not be found'.format(str(extlib_path)))
 
+    # internal method used by _set_lib_path to discover subfolders
     @staticmethod
     def _check_dir_path(p, str=False):
         if os.path.isdir(p):
@@ -466,6 +489,7 @@ class Executor(object):
                 return ''
             return []
 
+    # general method to find the python executable associated with the running interpreter. sys.executable is modified by ArcMap
     @staticmethod
     def find_py_exe(w_exe=False):
         """Utility to find the python or pythonw executable in the ArcGIS environment.
