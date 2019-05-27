@@ -259,7 +259,7 @@ def initialise_logger(i_logger=False, to_file=False, force=True, level=logging.I
     # if the logger does not have any handler, initialise it
     if len(i_logger.handlers) == 0:
         # if we want to log to disk
-        if to_file is True os isinstance(to_file(str, unicode)):
+        if to_file is True or isinstance(to_file, (str, unicode)):
             filename = _get_log_filename(to_file)
             i_logger = _log_to_file(i_logger, filename, level)
 
