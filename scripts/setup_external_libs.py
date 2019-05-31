@@ -59,7 +59,7 @@ class Installer(object):
                         answer = raw_input('   INPUT   Do you want to re-install external libraries? [y/n]: ')
                     if answer.lower() == 'n':
                         sys.exit()
-                rmtree(self.target)
+                rmtree(self.target, ignore_errors=True)
 
             # running the installation
             logger.info('target folder is ' + self.target)
@@ -69,10 +69,11 @@ class Installer(object):
             except Exception:
                 # clean up if something went wrong
                 if os.path.isdir(self.target):
-                    rmtree(self.target)
+                    rmtree(self.target, ignore_errors=True)
                 raise
         except Exception:
             logger.exception('Installation failed with the following exception')
+            sys.exit(1)  #making sure that we carry over the error outside python
 
 
     # method to test the architecture
@@ -213,7 +214,7 @@ class Installer(object):
         # wait for it to complete
         installer.wait()
         # something went wrong
-        if installer.returncode != 0:
+        if installer.returncode > 0:
             raise RuntimeError(str(installer.stderr.read()))
 
         return
