@@ -5,20 +5,21 @@ try:
     import arcpy
 except Exception:
     raise ImportError('Could not find the arcpy module. Are you running this toolbox from ArcGIS?')
-import arcpy_extender
-from arcpy_extender.core import ARClogger as log
+from core import executor as arcpy_extender
+from core import ARClogger as log
 logger = log.initialise_logger(to_file='ArcpyExtenderToolbox', force=True)
 
 
 class Toolbox(object):
+    stored_parameters_file = os.path.join(os.path.expanduser("~"), 'arcpyextenderparameters.txt')
     def __init__(self):
         self.label = "Arcpy Extender"
         self.alias = "Toolbox to perform an external execution"
         # List of tool classes associated with this toolbox
         self.tools = [Extender]
 
-    @staticmethod
-    def store_parameters(parameters):
+    @classmethod
+    def store_parameters(self, parameters):
         logger.info('Saving parameters')
         stored_parameters = {}
         for p in parameters:
@@ -29,16 +30,16 @@ class Toolbox(object):
                 stored_parameters[p.name] = p.valueAsText
                 logger.info("  {0}: {1}".format(p.name, p.valueAsText))
         if stored_parameters != {}:
-            with open('.arcpyparameters.txt', 'w+') as dump:
+            with open(self.stored_parameters_file, 'w+') as dump:
                 dump.write(json.dumps(stored_parameters))
 
-    @staticmethod
-    def retrieve_parameters(parameters):
-        if not os.path.isfile('.arcpyparameters.txt'):
+    @classmethod
+    def retrieve_parameters(self, parameters):
+        if not os.path.isfile(self.stored_parameters_file):
             return parameters
         else:
             logger.info('Loading parameters')
-            with open('.arcpyparameters.txt', 'r') as dump:
+            with open(self.stored_parameters_file, 'r') as dump:
                 stored_parameters = json.loads(dump.read())
             for p in parameters:
                 if p.name in stored_parameters:
@@ -104,15 +105,15 @@ class Extender(object):
         return True
 
     def updateParameters(self, parameters):  # optional
-        # if parameters[0].value is None:
-        #     Toolbox.retrieve_parameters(parameters)
+        if parameters[0].value is None:
+            Toolbox.retrieve_parameters(parameters)
 
-        # if all([p.hasBeenValidated for p in parameters]):
-        #     # Logic to make sure that we don't pass the previous output file to avoid layer locking (PB-14)
-        #     for p in parameters:
-        #         if p.direction == "Output":
-        #             p.value = None
-        #     Toolbox.store_parameters(parameters)
+        if all([p.hasBeenValidated for p in parameters]):
+            # Logic to make sure that we don't pass the previous output file to avoid layer locking (PB-14)
+            for p in parameters:
+                if p.direction == "Output":
+                    p.value = None
+            Toolbox.store_parameters(parameters)
 
         return
 
@@ -131,6 +132,10 @@ class Extender(object):
         return
 
     def execute(self, parameters, messages):
+        arcpy.AddMessage(str(type(logger)))
+        arcpy.AddMessage(str(logger.handlers))
+        arcpy.AddMessage(str(logger.name))
+        
         exe = parameters[0].valueAsText
         args = self.split_args(parameters[1].valueAsText) if parameters[1].value else []
         ext_libs = parameters[2].valueAsText if parameters[2].value else False
