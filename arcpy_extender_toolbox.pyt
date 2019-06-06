@@ -132,10 +132,6 @@ class Extender(object):
         return
 
     def execute(self, parameters, messages):
-        arcpy.AddMessage(str(type(logger)))
-        arcpy.AddMessage(str(logger.handlers))
-        arcpy.AddMessage(str(logger.name))
-        
         exe = parameters[0].valueAsText
         args = self.split_args(parameters[1].valueAsText) if parameters[1].value else []
         ext_libs = parameters[2].valueAsText if parameters[2].value else False
