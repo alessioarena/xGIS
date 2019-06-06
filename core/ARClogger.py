@@ -273,7 +273,8 @@ def initialise_logger(i_logger=False, to_file=False, force=True, level=logging.I
         # do we want to re-initialise it?
         if force:
             # then remove all the current handlers
-            for h in i_logger.handlers:
+            while len(i_logger.handlers) > 0:
+                h = i_logger.handlers[0]
                 i_logger.removeHandler(h)
             # and call again this method with the clean  logger
             i_logger = initialise_logger(i_logger=i_logger, to_file=to_file, force=False, level=level)
