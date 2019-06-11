@@ -112,6 +112,17 @@ def bootstrap(tmpdir=None):
         args = [x for x in args if x != "--no-wheel"]
         implicit_wheel = False
 
+    # Check if the user has requested us not to install wheel
+    # if "--target" in args:
+    #     import site
+    #     for n, a in enumerate(args):
+    #         if a == "--target":
+    #             target = args[n+1]
+    #             print('Installing pip in ' + target)
+    #             del args[n+1]
+    #             del args[n]
+    #     site.USER_BASE = target
+
     # We only want to implicitly install setuptools and wheel if they don't
     # already exist on the target platform.
     if implicit_setuptools:

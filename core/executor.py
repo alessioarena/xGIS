@@ -412,6 +412,12 @@ class Executor(object):
         if self._check_dir_path(extlib_path):
             # C://Tests/blabla/external_libs
             _path.extend(self._check_dir_path(extlib_path))  # CONDA PIP
+            # C://Tests/blabla/external_libs/Python27/site-packages
+            for f in os.listdir(extlib_path):
+                if f.startswith('Python'):
+                    extlib_path_distro = os.path.join(extlib_path, f + os.sep + 'site-packages')
+                    _pythonpath.extend(self._check_dir_path(extlib_path_distro))
+                    _path.extend(self._check_dir_path(os.path.join(extlib_path, 'Scripts')))
 
             # C://Tests/blabla/external_libs/DLLs
             _pythonpath.extend(self._check_dir_path(os.path.join(extlib_path, 'DLLs')))  # CONDA
@@ -461,7 +467,14 @@ class Executor(object):
             # special case for GDAL
             # C://Tests/blabla/external_libs/osgeo or
             # C://Tests/blabla/external_libs/site-packages/osgeo
-            for gdal_path in [os.path.join(os.path.dirname(extlib_path), 'osgeo'), os.path.join(os.path.join(lib_path, 'site-packages'), 'osgeo')]:
+            gdal_optional_paths = [
+                os.path.join(os.path.dirname(extlib_path), 'osgeo'),
+                os.path.join(os.path.join(lib_path, 'site-packages'), 'osgeo'),
+            ]
+            # C://Tests/blabla/external_libs/Python27/site-packages/osgeo
+            if extlib_path_distro:
+                gdal_optional_paths.append(os.path.join(extlib_path_distro, 'osgeo'))
+            for gdal_path in gdal_optional_paths:
                 if os.path.isdir(gdal_path):
                     # C://Tests/blabla/external_libs/osgeo/gdalplugins or
                     # C://Tests/blabla/external_libs/site-packages/osgeo/gdalplugins

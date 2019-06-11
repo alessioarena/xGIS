@@ -2,6 +2,8 @@ import os
 import sys
 import logging
 import subprocess
+import pkgutil
+import site
 from shutil import rmtree
 # initialise logger
 logging.basicConfig(level=logging.INFO, format='%(levelname)8s   %(message)s')
@@ -26,6 +28,7 @@ class Installer(object):
             if target:
                 if isinstance(target, (str, unicode)):
                     self.target = target
+                    logger.info('Target folder is ' + os.path.join(os.path.abspath(self.target), 'Python{0}{1}{2}site-packages'.format(sys.version_info[0], sys.version_info[1], os.sep)))
                 else:
                     raise TypeError("'target' must be a string")
             if not any([yaml, pkgs, whls]):
@@ -62,7 +65,7 @@ class Installer(object):
                 rmtree(self.target, ignore_errors=True)
 
             # running the installation
-            logger.info('target folder is ' + self.target)
+            logger.info('***** Running the installation *****')
             try:
                 self.install_whls()
                 self.install_pkgs()
@@ -105,12 +108,18 @@ class Installer(object):
         # you do not have pip
         except ImportError:
             logger.info('Could not find a pip version associated with this python executable. Retrieving and installing the latest version...')
-            import getpip
-            # retrieve pip
-            getpip.main()
+            getpip_path = os.path.join(os.path.dirname(__file__), 'getpip.py')
+            self._installer(['python', getpip_path], force=True)
+            # making sure that we keep the current PYTHONUSERBASE path in our path
+            site.addsitedir(site.USER_BASE)
+            # import getpip
+            # # retrieve pip
+            # getpip.main()
             # all good, but you need to restart this process
-            logger.info('Pip 9.0.1 succesfully installed. Please rerun this script')
-            sys.exit()
+
+            logger.warning('Pip 9.0.1 succesfully installed. You may have to rerun this script in order to have it working properly')
+            # sys.exit()
+            import pip
 
         return
 
@@ -122,12 +131,16 @@ class Installer(object):
             raise IOError('could not understand or find the yaml file. Please make sure to pass the correct path as a string')
 
         # load the yaml library if you have it, or install it and load it
+        if not bool(pkgutil.find_loader('yaml')):
+            cmd_line = ['-q', 'pyyaml']
+            self._installer(cmd_line, target=os.path.abspath(self.target))
+            # add the new path to load yaml
+            site.addsitedir(os.path.join(os.path.abspath(self.target), 'Python{0}{1}{2}site-packages'.format(sys.version_info[0], sys.version_info[1], os.sep)))
+
         try:
             import yaml
         except ImportError:
-            cmd_line = ['-q', 'pyyaml']
-            self._installer(cmd_line)
-            import yaml
+            raise RuntimeError('Could not load the Pyyaml package. Please check that the module is correctly installed in one of '+str(sys.path))
 
         # load the yaml file
         try:
@@ -152,8 +165,6 @@ class Installer(object):
 
     # test the installed libraries
     def test_environment(self):
-        import sys
-        import pkgutil
         # divert the path to the locally installed libraries
         backup = sys.path
         sys.path = [self.target]  # + sys.path
@@ -184,28 +195,37 @@ class Installer(object):
     # method to install python packages using pip
     def install_pkgs(self):
         if self.pkgs and len(self.pkgs) > 0:
-            cmd_line = ['-q', '--disable-pip-version-check', '--target'] + [self.target] + self.pkgs
-            self._installer(cmd_line)
+            cmd_line = ['-q', '--disable-pip-version-check'] + self.pkgs
+            # cmd_line = ['-q', '--disable-pip-version-check', '--no-cache-dir', '--target'] + [self.target] + self.pkgs
+            self._installer(cmd_line, target=os.path.abspath(self.target))
 
 
     # method to install wheels using pip
     def install_whls(self):
         if self.whls and len(self.whls) > 0:
-            cmd_line = ['-q', '--disable-pip-version-check', '--prefix=' + self.target] + self.whls
-            self._installer(cmd_line)
+            # cmd_line = ['-q', '--disable-pip-version-check', '--prefix=' + self.target] + self.whls
+            cmd_line = ['-q', '--disable-pip-version-check'] + self.whls
+            self._installer(cmd_line, target=os.path.abspath(self.target))
 
 
     # general method to run the installation
     @staticmethod
-    def _installer(cmd_line):
+    def _installer(cmd_line, target=False, force=False):
         # prepend the python call
-        if not cmd_line[:4] == ['python', '-m', 'pip', 'install']:
+        if not force and not cmd_line[:4] == ['python', '-m', 'pip', 'install']:
             cmd_line = ['python', '-m', 'pip', 'install'] + cmd_line
+        if target:
+            environ = os.environ.copy()
+            environ['PYTHONUSERBASE'] = target
+            cmd_line = cmd_line + ['--user']
+        else:
+            environ = os.environ.copy()
         logger.info('executing ' + ' '.join(cmd_line))
         # run the subprocess
         installer = subprocess.Popen(
             args=cmd_line,
             shell=False,
+            env=environ,
             executable=sys.executable,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
