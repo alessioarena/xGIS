@@ -1,5 +1,3 @@
-<link rel="stylesheet" href="styles.css">
-
 # arcpy_extender
 This module was developed to break free from arcpy/ArcGIS delicate environment and leverage Python's full potential from within ArcGIS itself.
 
@@ -13,7 +11,9 @@ Practically, your external python code must:
  - have a command line interface (typically achieved by using `argparse`, see `setup_external_libs.py`)
 
 Here is a brief diagram explaining how this works:
-<img src="docs/execute_externally_workflow.png" width="500" class="centered">
+<p align="center">
+  <img src="docs/execute_externally_workflow.png" width="500">
+</p>
 
 
 
