@@ -1,34 +1,24 @@
 # arcpy_extender
-Facility to enable external executions in arcpy and extend its capabilites
+This module was developed to break free from arcpy/ArcGIS delicate environment and leverage Python's full potential from within ArcGIS itself.
 
-This library is composed of two parts:
- - setup_external_libs, and executable or importable script that takes care of setting up your python dependencies
- - the module itself centered around Executer, a python class that takes care of resolving absolute paths, setting up your environment, executing your process subcall and managing your output and error streams
- 
-The Executor will allow you to use external python scripts (including those having conflicting dependencies with arcpy), as well as other languages (like R) and generally anything that can be executed in a shell.
-This will:
- - search and resolve your script/executable
- - search and resolve your executable to use when calling your script
- - copy your environment and add any path you pass with the external_libs argument to your PATH. This environment will be then used in your subcall
- - monitor your stdout, stderr and return code, raising RuntimeError when the call exits unexpectedly
- - monitor your stdout for certain keyword to interpret as results to load back
+This was made possible by leveraging the `os` and `subprocess` libraries installed with any Python environment.
+Those allow to directly interface with the operating system, and therefore to any executable (including Python).
+
+So, what is the catch? we are not sharing memory between ArcGIS and the rest, meaning that we cannot pass variables and we have minimal communication.
+Practically, your external python code must:
+ - be completely self sufficient by loading and saving to disk
+ - you cannot use arcpy from within it (but you can go back and forth between ArcGIS and the rest as many times as you like)
+ - have a command line interface (typically achieved by using `argparse`, see `setup_external_libs.py`)
+
+Here is a brief diagram explaining how this works:
+![arcpy_extender_workflow]('./docs/execute_externally_workflow.png)
+
 
 ## Example usage
 Here is a short example on how to print hello word using this tool
 ```python
 >>> import arcpy_extender
 >>> exe = arcpy_extender.Executor(['python.exe', '-c', 'print("hello world!")'])
->>> exe.info()
-Current settings are:
-  executable          : None  # exe passed, so no need to specify a different executable
-  working directory   : 'C:\xxxx\xxxx_xxxx\xxxx'
-  arguments           : 'C:\Users\xxxxx\miniconda2_64\python.exe'  # Fully resolved python executable path
-                      : '-c'
-                      : 'print("hello world!")'
-  PATH                : 'C:\ProgramData\DockerDesktop\version-bin'
-                      : 'C:\Program Files\Docker\Docker\Resources\bin'
-                      : 'C:\Windows\system32'
-                      : 'C:\Windows'
 >>> exe.run()
 Running 'C:\Users\xxxxxx\miniconda2_64\python.exe' externally
    Working directory 'C:\xxxx\xxxx_xxxx\xxxx'
@@ -79,6 +69,75 @@ Running 'C:\xxxx\xxxx_xxxx\xxxx\sklearn_script.py' externally
 >>> print(result)
 ['out.csv']
 ```
+
+## Advanced functionalities
+
+The Executor object handles automatically most of the set up, but gives you control and visibility over most of it.
+This object offers the following attributes and methods:
+```python
+Executor.executable     # Executable used to run the command line passed (e.g. python.exe)
+Executor.cmd_line       # command line arguments (e.g. ['script.py', '--test_file', 'input.csv'])
+Executor.cwd            # working directory to use
+Executor.host           # for future support of QGIS and other
+Executor._environ       # os.environ to use when running the subprocess call
+Executor.logger         # logging Logger used by the Executor to report on the subprocess call
+
+
+Executor.set_executable()
+Executor.set_cmd_line()
+Executor.set_cwd()
+Executor.set_external_libs()
+Executor.set_logger()
+Executor.info()         # print current settings
+Executor.run()          # run the subprocess call
+
+ExternalExecutionError  # error raised when the execution fails. It exposes the errno exit code reported by the subprocess
+```
+
+Message passing functionalities are limited, but the Executor will automatically retrieve lines starting with `RESULT: ` and return their content (by invoking the run() method).
+This allows you to communicate basic information like a file name or outcome of an operation.
+This should not be used to pass large information.
+
+The Executor will also monitor stdout, stderr and the exit code.
+Stdout will be streamed back to the parent process (arcpy/ArcGIS) using the defined logger
+Stderr will be only streamed back if the exit code is not 0 (abnormal termination).
+
+
+## Setting up your environment in Python
+This repository provides you a convenient script to help you installing python modules and wheels in the right way.
+This is located in Scripts/setup_external_libs.py and has a handy command line interface.
+This can be as easy as:
+```python
+>>> python.exe ./Scripts/setup_external_libs.py --pkgs numpy matplotlib==3.1.1 pandas>=0.23.4 --whls geopandas-0.5.0-py2.py3-none-any.whl
+```
+It also supports the definition of a requirements file in the yaml format (to not interfere with python widely used requirements.txt)
+This file can be defined as follow
+```yaml
+pkgs:
+  - 'numpy'
+  - 'matplotlib==3.1.1'
+  - 'pandas>=0.23.4'
+whls:
+  - 'geopandas-0.5.0-py2.py3-none-any.whl'
+```
+
+and used as follow:
+```python
+>>> python.exe ./Scripts/setup_external_libs.py --yaml requirements.yaml
+```
+
+You can also specify the folder location to locally store this separate environment (default to ./external_libs)
+```python
+>>> python.exe ./Scripts/setup_external_libs.py --target ./myenv
+```
+
+## Compatibility with ArcGIS
+This tool was developed for ArcGIS Desktop 10.5 and newer versions, but I'm planning to support ArcGIS Pro.
+This will require transitioning to a Python 2 and Python 3 compatible code.
+
+As this approach requires only common libraries like `os`, `subprocess` and `logging`, there is no additional complexity in supporting newer and different versions of ArcGIS.
+
+This module is fully importable and usable from within ArcGIS/arcpy, but will allow you to leverage python resources that would otherwise break the delicate ArcGIS Python environment.
 
 ## License
 

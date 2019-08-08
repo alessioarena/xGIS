@@ -20,6 +20,7 @@ except NameError:
     # python 3
     basestring = (str, bytes)
 
+
 class ExternalExecutionError(Exception):
     # custom error for abnormal process termination
     def __init__(self, message, errno=1):
