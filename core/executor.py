@@ -12,9 +12,19 @@ except ImportError:
 import ARClogger
 module_logger = ARClogger.initialise_logger(to_file=False, force=True)
 
-# custom error for abnormal process termination
+# for python 2 and python 3 compatibility
+try:
+    # python 2
+    basestring
+except NameError:
+    # python 3
+    basestring = (str, bytes)
+
 class ExternalExecutionError(Exception):
-    pass
+    # custom error for abnormal process termination
+    def __init__(self, message, errno=1):
+        super(ExternalExecutionError, self).__init__(message)
+        self.errno = errno
 
 
 class Executor(object):
@@ -109,7 +119,7 @@ class Executor(object):
             if None, it will expect the first item in cmd_line to be an executable(.exe) itself
         """
         # if we pass a value
-        if isinstance(executable, (str, unicode)):
+        if isinstance(executable, basestring):
             self.logger.debug('input executable kwd: {0}'.format(executable))
             # test if exists and can be executed
             exe = self._check_paths(executable, is_executable=True)
@@ -146,7 +156,7 @@ class Executor(object):
         if not isinstance(cmd_line, list):
             raise TypeError("The 'cmd_line' argument must be a list of strings")
         # in fact must be a list of strings
-        if not all([isinstance(x, (str, unicode)) for x in cmd_line]):
+        if not all([isinstance(x, basestring) for x in cmd_line]):
             list_error = ', '.join(['{0}[{1}]'.format(str(a), type(a)) for a in cmd_line])
             raise TypeError("The 'cmd_line' argument must be a list of strings. You passed: {}".format(list_error))
         cmd_line = cmd_line[:]  # to copy the list
@@ -185,7 +195,7 @@ class Executor(object):
             It will be passed to the subprocess call, so make sure that your arguments are specified relatively to this path
         """
         if cwd:
-            if not isinstance(cwd, (str, unicode)):
+            if not isinstance(cwd, basestring):
                 raise TypeError("the 'cwd' argument must a string")
             # check the path and assign it
             self.cwd = self._check_paths(cwd, is_dir=True)
@@ -207,7 +217,7 @@ class Executor(object):
             This script will also generate/modify your PYTHONPATH
         """
         # one path passed
-        if isinstance(external_libs, (str, unicode)):
+        if isinstance(external_libs, basestring):
             # check the path
             external_libs = self._check_paths(external_libs, is_dir=True)
             # copy the environment
@@ -216,7 +226,7 @@ class Executor(object):
             self._set_lib_path(external_libs)
 
         # multiple paths passed
-        elif isinstance(external_libs, list) and all([isinstance(x, (str, unicode)) for x in external_libs]):
+        elif isinstance(external_libs, list) and all([isinstance(x, basestring) for x in external_libs]):
             external_libs_copy = external_libs[:]  # to make a copy
             external_libs = []
             for e_l in external_libs_copy:
@@ -288,7 +298,7 @@ class Executor(object):
     def _info_printer(self, head, to_print):
         # head is the line header, like PATH or "working directory"
         # to_print is the list of info to print
-        if isinstance(to_print, (str, unicode)):
+        if isinstance(to_print, basestring):
             self.logger.info('   %-20s: %-20s' % (head, to_print))
         elif isinstance(to_print, list):
             # splitting them into multiple lines
@@ -384,7 +394,7 @@ class Executor(object):
 
             # raise the error code
             sys.tracebacklimit = 0
-            raise ExternalExecutionError('External execution failed with a return error code {0}'.format(popen.returncode))
+            raise ExternalExecutionError('External execution failed with exit code {0}'.format(popen.returncode), popen.returncode)
         else:
             # all good!
             self.logger.info('   ***** SubProcess Completed *****')
