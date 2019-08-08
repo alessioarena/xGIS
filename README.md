@@ -1,3 +1,5 @@
+<link rel="stylesheet" href="styles.css">
+
 # arcpy_extender
 This module was developed to break free from arcpy/ArcGIS delicate environment and leverage Python's full potential from within ArcGIS itself.
 
@@ -11,7 +13,8 @@ Practically, your external python code must:
  - have a command line interface (typically achieved by using `argparse`, see `setup_external_libs.py`)
 
 Here is a brief diagram explaining how this works:
-![arcpy_extender_workflow]('./docs/execute_externally_workflow.png)
+<img src="docs/execute_externally_workflow.png" width="500" class="centered">
+
 
 
 ## Example usage
@@ -107,7 +110,7 @@ Stderr will be only streamed back if the exit code is not 0 (abnormal terminatio
 This repository provides you a convenient script to help you installing python modules and wheels in the right way.
 This is located in Scripts/setup_external_libs.py and has a handy command line interface.
 This can be as easy as:
-```python
+```bash
 >>> python.exe ./Scripts/setup_external_libs.py --pkgs numpy matplotlib==3.1.1 pandas>=0.23.4 --whls geopandas-0.5.0-py2.py3-none-any.whl
 ```
 It also supports the definition of a requirements file in the yaml format (to not interfere with python widely used requirements.txt)
@@ -122,12 +125,12 @@ whls:
 ```
 
 and used as follow:
-```python
+```bash
 >>> python.exe ./Scripts/setup_external_libs.py --yaml requirements.yaml
 ```
 
 You can also specify the folder location to locally store this separate environment (default to ./external_libs)
-```python
+```bash
 >>> python.exe ./Scripts/setup_external_libs.py --target ./myenv
 ```
 
