@@ -9,7 +9,7 @@ try:
     import arcpy
 except ImportError:
     pass
-import ARClogger
+from . import ARClogger
 module_logger = ARClogger.initialise_logger(to_file=False, force=True)
 
 # for python 2 and python 3 compatibility

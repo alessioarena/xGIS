@@ -62,9 +62,9 @@ class Installer(object):
             self.test_pip()
 
             # loading the yaml file if passed
-            if yaml and (not whls and not pkgs):
+            if yaml and not (whls or pkgs):
                 self.load_yaml()
-            else:
+            elif yaml:
                 raise NotImplementedError("Passing 'yaml' argument and any of 'pkgs' or 'whls' is not supported ")
 
             # testing the architecture against the wheels passed

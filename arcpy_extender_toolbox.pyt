@@ -5,8 +5,12 @@ try:
     import arcpy
 except Exception:
     raise ImportError('Could not find the arcpy module. Are you running this toolbox from ArcGIS?')
-from core import executor as arcpy_extender
-from core import ARClogger as log
+try:
+    import arcpy_extender
+    import arcpy_extender.ARClogger as log
+except ImportError:
+    from core import executor as arcpy_extender
+    from core import ARClogger as log
 logger = log.initialise_logger(to_file='ArcpyExtenderToolbox', force=True)
 
 
