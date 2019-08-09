@@ -15,12 +15,20 @@ logging.captureWarnings(True)
 # this is to pin the logger associated with this module, and retrieve it later
 logger = logging.getLogger(__name__)
 
+# python 2/3 compatibility
+try:
+    basestring
+    unicode
+except NameError:
+    basestring = (str, bytes)
+    unicode = str
+
 
 # context manager to change temporarily the log level of a logging.Logger by using the with statement
 class LogToLevel(object):
     """Context manager for logging.Logger
     This will safely change the logging level using the with statement, and return the original logging level on exit
-    
+
     Arguments:
     -----------
     logger : logging.Logger
@@ -33,7 +41,7 @@ class LogToLevel(object):
         logging.WARNING or 30,
         logging.ERROR or 40,
         logging.CRITICAL or 50
-    
+
     Returns:
     -----------
     out : logging.Logger
@@ -44,7 +52,7 @@ class LogToLevel(object):
         import logging
         import arclogger
         logger = arclogger.logger
-        
+
         logger.info('you should see this message')
         logger.debug('you are not going to see this message')
         with LogToLevel(logger, logging.DEBUG) as logger:
@@ -94,7 +102,7 @@ class ConditionalFilter(logging.Filter):
     """
     def __init__(self, level, condition):
         self.level = level
-        if callable(condition) and condition.__module__ == 'operator':
+        if callable(condition) and (condition.__module__ == 'operator' or condition.__module__ == '_operator'):
             self.condition = condition
         else:
             raise TypeError('condition must be a callable object from the operator module')
@@ -224,7 +232,7 @@ class ARCFileHandler(logging.FileHandler):
 # method to initialise the module logger, or another one passed with the first argument
 def initialise_logger(i_logger=False, to_file=False, force=True, level=logging.INFO):
     """method to initialise a new logger, or re-initialise an already existing one
-    
+
     Arguments:
     -----------
     i_logger : logging.Logger or False
@@ -236,15 +244,15 @@ def initialise_logger(i_logger=False, to_file=False, force=True, level=logging.I
         if str, this needs to be:
         - a path to a directory
             [path/to/dir]/ArcLogger_[user]_[date].log
-        - a filename 
+        - a filename
             ./[filename]_[date].logs
-        - a rootname 
+        - a rootname
             ~/[root]_logs/[root]_[user]_[date].logs
     force : bool, optional (default : False)\n
         to force reinitialisation of this logger. It will delete any handler associated with this logger
     level : logging.Level, optional (default : logging.INFO)\n
         logging level to use for the logger
-    
+
     Returns:
     -----------
     out : logging.Logger
@@ -259,7 +267,7 @@ def initialise_logger(i_logger=False, to_file=False, force=True, level=logging.I
     # if the logger does not have any handler, initialise it
     if len(i_logger.handlers) == 0:
         # if we want to log to disk
-        if to_file is True or isinstance(to_file, (str, unicode)):
+        if to_file is True or isinstance(to_file, basestring):
             filename = _get_log_filename(to_file)
             i_logger = _log_to_file(i_logger, filename, level)
 
@@ -319,7 +327,7 @@ def _get_log_filename(to_file):
         # we want to use the defaults
         path = default_path
         filename = default_filename
-    elif isinstance(to_file, (str, unicode)):
+    elif isinstance(to_file, basestring):
         path = os.path.dirname(to_file)
         basename, ext = os.path.splitext(os.path.basename(to_file))
         # we are passing only a string to prepend to the defaults, e.g. PlannedBurnsToolbox
