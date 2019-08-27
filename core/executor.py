@@ -373,8 +373,10 @@ class Executor(object):
         results = []
         # monitor and print output stream as it comes
         for l, r in self._print_stream(popen.stdout):
-            self.logger.info('   {0}'.format(l))
-            results.extend(r)
+            if l != '':
+                self.logger.info('   {0}'.format(l))
+            else:
+                results.extend(r)
             try:
                 # check if user cancelled in ArcGIS
                 if arcpy.env.isCancelled:
@@ -411,7 +413,10 @@ class Executor(object):
         if stream:
             for line in iter(stream.readline, ""):
                 result = re.findall('RESULT: ([^\r\n]*)', line)
-                yield line, result
+                if result:
+                    yield '', result
+                else:
+                    yield line, result
                 sleep(0.05)  # To make sure to read the entire stream
             # stream.close()
 
