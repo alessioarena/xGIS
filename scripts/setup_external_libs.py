@@ -69,22 +69,24 @@ class Installer(object):
 
             # testing the architecture against the wheels passed
             # also print warning if not using ArcGIS python environment
-            self.test_architecture(self.whls)
+            self.test_architecture()
+
+            # find the specified wheels
+            self.find_wheels()
 
             # check wether you have already all the required packages installed in the target folder
-            # TODO to be checked wether captures all cases
-            if os.path.exists(self.target):
+            if os.path.exists(self.target) and len(os.listdir(self.target)) > (len(self.whls) + len(self.pkgs)):
                 logger.info('Checking whether requirements are already satisfied')
-                if self.test_environment():
+                test, missing = self.test_environment()
+                if test:
                     logger.info('Found all required packages')
                     answer = 'empty'
-                    # logger.info('Found a pre-existing {:s} folder. '.format(self.target))
                     while answer.lower() not in ['', 'y', 'n']:
-                        answer = raw_input('   INPUT   Do you want to re-install external libraries? [y/n]: ')
+                        answer = raw_input('   INPUT   Do you want to re-install those libraries? [y/n]: ')
                     if answer.lower() == 'n':
                         sys.exit()
                 else:
-                    logger.info('Some of the required packages are missing')
+                    logger.info('Some of the required packages are missing: {0}'.format(','.join(missing)))
                 if not self.dry_run:
                     rmtree(self.target, ignore_errors=True)
 
@@ -102,21 +104,50 @@ class Installer(object):
             logger.exception('Installation failed with the following exception')
             sys.exit(1)  # making sure that we carry over the error outside python
 
-    @staticmethod
-    def test_architecture(whls=False):
+    def find_wheels(self):
+        # find the location of specified wheels
+        wheels = []
+        path = os.path.abspath('.')
+        if self.yaml:
+            alt_path = os.path.dirname(os.path.abspath(self.yaml))
+            if alt_path == path:
+                alt_path = None
+            else:
+                path = '{0} and {1}'.format(path, alt_path)
+        else:
+            alt_path = None
+        logger.debug('Checking for requested wheels in {0}'.format(path))
+        for w in self.whls:
+            if os.path.isfile(w):
+                logger.debug('{0} was found'.format(w))
+                wheels.append(w)
+            else:
+                if alt_path is not None:
+                    w_alt = os.path.join(alt_path, w)
+                    if os.path.isfile(w_alt):
+                        logger.debug('{0} was found'.format(w_alt))
+                        wheels.append(w_alt)
+                else:
+                    logger.debug('{0} was NOT found'.format(w))
+                    raise IOError('Could not find the specified wheel {0}. Please place it in the curret directory or beside the requirements file'.format(w))
+        self.whls = wheels
+
+    def test_architecture(self):
         # method to test the architecture
         # check if you are running a ArcGIS python and warn if it is not the case
         if 'arcgis' not in sys.executable.lower():
             logging.warning('You are not using the ArcGIS python interpreter. Please be mindful that libraries installed in this way may not be compatible with ArcGIS')
         # we are running a 32bit python
         if sys.maxsize == 2147483647:
+            logger.debug('Detected a 32bit interpreter')
             # if whls are for 64bit, raise an error
-            if whls and any(['amd64' in x for x in whls]):
+            if self.whls and any(['amd64' in x for x in self.whls]):
                 raise RuntimeError('Detected Python 32bit, but you provided 64 bit wheels. Please run this script with the 64bit Python interpreter')
         # we are running a 64bit python
         elif sys.maxsize == 9223372036854775807:
+            logger.debug('Detected a 64bit interpreter')
             # if whls are for 32bit, raise an error
-            if whls and any(['win32' in x for x in whls]):
+            if self.whls and any(['win32' in x for x in self.whls]):
                 raise RuntimeError('Detected Python 64bit, but you provided 32 bit wheels. Please run this script with the 32bit Python interpreter')
         # failed to detect the architecture
         else:
@@ -134,14 +165,8 @@ class Installer(object):
             self._installer(['python', getpip_path], force=True)
             # making sure that we keep the current PYTHONUSERBASE path in our path
             site.addsitedir(site.USER_BASE)
-            # import getpip
-            # # retrieve pip
-            # getpip.main()
-            # all good, but you need to restart this process
 
             logger.warning('Pip 9.0.1 succesfully installed. You may have to rerun this script in order to have it working properly')
-            # sys.exit()
-            # import pip
 
         return
 
@@ -201,6 +226,7 @@ class Installer(object):
             self.avail_modules[d.key] = d.version
 
         check = []
+        missing = []
         # for every package we need to install
         pkgs = self.pkgs if self.pkgs else []
         for p in pkgs:
@@ -213,8 +239,8 @@ class Installer(object):
                 split = p.split(c)
                 # if the split was succesful
                 if len(split) == 2:
-                    n = split[0].lower()
-                    v = split[1]
+                    n = split[0].lower()  # name
+                    v = split[1]  # version
                     break
             # if no split was succesful, assume p has no specific requirements
             else:
@@ -222,7 +248,11 @@ class Installer(object):
                 v = None
                 c = None
 
-            check.append(self.check_module_availability(n, c, v))
+            if self.check_module_availability(n, c, v):
+                check.append(True)
+            else:
+                check.append(False)
+                missing.append(p)
 
         whls = self.whls if self.whls else []
         for p in whls:
@@ -233,9 +263,13 @@ class Installer(object):
                 c = '=='
             else:
                 raise RuntimeError('Could not understand distribution information of wheel {0}'.format(p))
-            check.append(self.check_module_availability(n, c, v))
+            if self.check_module_availability(n, c, v):
+                check.append(True)
+            else:
+                check.append(False)
+                missing.append(p)
 
-        return all(check)
+        return all(check), missing
 
     def check_module_availability(self, name, condition, version):
         # check if module is available
