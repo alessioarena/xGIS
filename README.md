@@ -18,24 +18,32 @@ Here is a brief diagram explaining how this works:
 
 
 ## Example usage
-Here is a short example on how to print hello word using this tool
+Here is a short example on how to print hello word using this tool.
+This approach is equivalent to executing `python -c 'print("hello world!")'` in powershell
 ```python
 >>> import arcpy_extender
 >>> exe = arcpy_extender.Executor(['python.exe', '-c', 'print("hello world!")'])
 >>> exe.run()
-Running 'C:\Users\xxxxxx\miniconda2_64\python.exe' externally
-   Working directory 'C:\xxxx\xxxx_xxxx\xxxx'
-   Executable None
-   Arguments 'C:\Users\xxxxxx\miniconda2_64\python.exe -c print("hello world!")'
-   hello world!
+15:56:57        Running python.exe externally
+15:56:57           Working directory 'C:\Temp\********'
+15:56:57           Executable 'C:\Python27\ArcGISx6410.5\python.exe'
+15:56:57           Arguments python.exe -c print("hello world!")
+15:56:57           ***** SubProcess Started *****
+15:56:58           hello world!
+15:56:58           ***** SubProcess Completed *****
 ```
 
 The Executor object allows you to control your environment using a simple interface. For example:
 ```python
+# defining arguments
 >>> args = ['sklearn_script.py', 'input.csv', '--outname', 'out.csv']
+# defining the folder location where additional Python libraries are stored (those will have priority over others)
 >>> external_libs = '../../project_folder/external_libs/'
+# defining a specific executable to use
 >>> py_exe = 'C:/Python27/ArcGISx6410.5/python.exe'
+# initialise the Executor object
 >>> exe = arcpy_extender.Executor(args, external_libs=external_libs, executable=py_exe)
+# print the current settings 
 >>> exe.info()
 Current settings are:
   executable          : 'C:\Python27\ArcGISx6410.5\python.exe'  # Our specified python interpreter
@@ -59,6 +67,7 @@ Current settings are:
                       : 'C:\xxxx\project_folder\external_libs\lib\site-packages'
   GDAL_DRIVER_PATH    : 'C:\xxxx\project_folder\external_libs\lib\site-packages\osgeo\gdalplugins'
   GDAL_DATA           : 'C:\xxxx\project_folder\external_libs\lib\site-packages\osgeo\gdal-data'
+# run
 >>> result = exe.run()
 Running 'C:\xxxx\xxxx_xxxx\xxxx\sklearn_script.py' externally
    Working directory 'C:\xxxx\xxxx_xxxx\xxxx'
