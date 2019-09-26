@@ -9,6 +9,11 @@ try:
     import arcpy
 except ImportError:
     pass
+
+try:
+    import qgis
+except ImportError:
+    pass
 from . import ARClogger
 module_logger = ARClogger.initialise_logger(to_file=False, force=True)
 
@@ -26,6 +31,73 @@ class ExternalExecutionError(Exception):
     def __init__(self, message, errno=1):
         super(ExternalExecutionError, self).__init__(message)
         self.errno = errno
+
+
+# to support Qgis background task system
+if 'qgis' in locals():
+    from qgis.core import QgsApplication, QgsTask, QgsVectorLayer, QgsRasterLayer
+    from qgis.utils import iface
+
+    # this is a modified QgsTask that supports subprocess execution
+    class QgsExecutorTask(QgsTask):
+        iface = iface
+        def __init__(self, description, popen_args, stream_handler, logger):
+            super().__init__(description, QgsTask.CanCancel)
+            if not isinstance(popen_args, dict):
+                raise TypeError('popen_args must be a dictionary')
+            self.popen_args = popen_args
+            self.stream_handler = stream_handler
+            self.logger = logger
+            self.exception = None
+            self.output = []
+
+        def run(self):
+
+            popen = subprocess.Popen(
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                **self.popen_args
+            )
+
+            self.logger.info('   ***** SubProcess Started *****')
+            try:
+                result = self.stream_handler(popen, self.logger, self.isCanceled)
+            except KeyboardInterrupt:
+                popen.kill()
+                self.logger.info('   ***** SubProcess Killed *****')
+                return False
+            except Exception as exception:
+                self.exception = exception
+                return False
+
+            self.output = result
+            return True
+
+        def finished(self, result):
+            if result:
+                self.logger.info('Task succesfully Completed')
+
+                # if I can detect a QGIS graphic interface
+                for r in self.output:
+                    if os.path.exists(r):
+                        name = os.path.basename(r)
+                        self.logger.info('Trying to load the result: {0}'.format(r))
+                        layer = QgsVectorLayer(r, name)
+                        if layer.isValid():
+                            self.iface.addVectorLayer(r, name, 'ogr')
+                        else:
+                            layer = QgsRasterLayer(r)
+                            if layer.isValid():
+                                self.iface.addRasterLayer(r, name)
+
+            else:
+                if self.exception:
+                    try:
+                        raise self.exception
+                    except Exception:
+                        self.logger.exception("Task failed with the following error")
+                else:
+                    self.logger.warning('Task cancelled or finished unexpectedly')
 
 
 class Executor(object):
@@ -85,6 +157,13 @@ class Executor(object):
         except NameError:
             pass
 
+        try:
+            qgis
+            self.host = 'qgis'
+        except NameError:
+            pass
+
+
     # general internal method to check input path
     def _check_paths(self, dir, is_file=False, is_dir=False, is_executable=False):
         if (is_file + is_dir + is_executable) != 1:
@@ -140,6 +219,14 @@ class Executor(object):
                 self.executable = sys.executable
         else:
             raise TypeError("The executable argument must be a string, None or False")
+
+        # deleting the PYTHONHOME variable to avoid it being prepended
+        # as this is set up by the host, it may not match the execution service
+        if 'python' in self.executable:
+            try:
+                del self._environ['PYTHONHOME']
+            except KeyError:
+                pass
 
     # method to set the list of command line arguments
     def set_cmd_line(self, cmd_line):
@@ -281,17 +368,17 @@ class Executor(object):
         self._info_printer('executable', str(self.executable))
         self._info_printer('working directory', str(self.cwd))
         self._info_printer('arguments', self.cmd_line)
-        self._info_printer('PATH', self._environ['PATH'].split(';'))
+        self._info_printer('PATH', str(self._environ['PATH']).split(';'))
         try:
-            self._info_printer('PYTHONPATH', self._environ['PYTHONPATH'].split(';'))
+            self._info_printer('PYTHONPATH', str(self._environ['PYTHONPATH']).split(';'))
         except KeyError:
             pass
         try:
-            self._info_printer('GDAL_DRIVER_PATH', self._environ['GDAL_DRIVER_PATH'].split(';'))
+            self._info_printer('GDAL_DRIVER_PATH', str(self._environ['GDAL_DRIVER_PATH']).split(';'))
         except KeyError:
             pass
         try:
-            self._info_printer('GDAL_DATA', self._environ['GDAL_DATA'].split(';'))
+            self._info_printer('GDAL_DATA', str(self._environ['GDAL_DATA']).split(';'))
         except KeyError:
             pass
 
@@ -315,7 +402,11 @@ class Executor(object):
             try:
                 if self.host == 'arcgis':
                     arcpy.env.autoCancelling = False
-                result = run_func(self)
+                    def cancel_test():
+                        return arcpy.env.isCancelled
+                else:
+                    cancel_test = False
+                result = run_func(self, cancel_test=cancel_test)
                 return result
             finally:
                 if self.host == 'arcgis':
@@ -324,7 +415,7 @@ class Executor(object):
 
     # core method
     @_host_management
-    def run(self):
+    def run(self, cancel_test=False):
         """Execute the task using the current configuration
         It returns a list of string obtained by scanning through the subprocess output stream.
         To have your result path returned in this way, please make sure to print a line matching this pattern: "RESULT: (.*)\\r\\n"
@@ -347,60 +438,77 @@ class Executor(object):
         self.logger.info('   Executable ' + str(self.executable))
         self.logger.info('   Arguments ' + ' '.join(cmd_line))
 
-        # start the non-blocking subprocess
-        run = subprocess.Popen(
-            cmd_line,
-            executable=self.executable,
-            env=self._environ,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            startupinfo=startupinfo,
-            cwd=self.cwd
-        )
+        popen_args = {
+            'args': cmd_line,
+            'executable': self.executable,
+            'env': self._environ,
+            'startupinfo': startupinfo,
+            'cwd': self.cwd
+        }
 
-        self.logger.info('   ***** SubProcess Started *****')
-        try:
-            # monitor the process in parallel, printing the output stream as it comes
-            result = self._stream_handler(run)
-        except KeyboardInterrupt:  # handle user cancellation
-            run.kill()
-            self.logger.info('   ***** SubProcess Killed *****')
-            raise
-        return result
+        if self.host == 'qgis':
+            globals()['qgis_executor_task'] = QgsExecutorTask('QgsExecutorTask', popen_args, self._stream_handler, self.logger)
+            task_id = QgsApplication.taskManager().addTask(globals()['qgis_executor_task'])
+
+            if task_id == 0:
+                raise RuntimeError('The background task could not be added')
+            else:
+                self.logger.info('Task {0} scheduled'.format(task_id))
+        else:
+            # start the non-blocking subprocess
+            run = subprocess.Popen(
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                **popen_args
+            )
+
+            self.logger.info('   ***** SubProcess Started *****')
+            try:
+                # monitor the process in parallel, printing the output stream as it comes
+                result = self._stream_handler(run, self.logger, cancel_test)
+            except KeyboardInterrupt:  # handle user cancellation
+                run.kill()
+                self.logger.info('   ***** SubProcess Killed *****')
+                raise
+            return result
 
     # internal handler that monitors stdout, cancels the job following user request and print stderr as required
-    def _stream_handler(self, popen):
+    @staticmethod
+    def _stream_handler(popen, logger, cancel_test):
         results = []
+        if not cancel_test:
+            def cancel_test():
+                return False
         # monitor and print output stream as it comes
-        for l, r in self._print_stream(popen.stdout):
-            if l != '':
-                self.logger.info('   {0}'.format(l))
-            else:
+        for l, r in Executor._print_stream(popen.stdout):
+            if bool(l):
+                logger.info('   {0}'.format(l))
+            elif bool(r):
                 results.extend(r)
-            try:
-                # check if user cancelled in ArcGIS
-                if arcpy.env.isCancelled:
-                    self.logger.warning('   Detected user cancellation')
-                    raise KeyboardInterrupt
-            except (NameError, AttributeError):
-                pass
+            if cancel_test():
+                logger.warning('   Detected user cancellation')
+                raise KeyboardInterrupt
+            if popen.poll() is not None:
+                break
 
         # wait for the subprocess to actually finish
         while popen.poll() is None:
-            None
+            pass
+        #     None
         # check the return code for abnormal
         if popen.returncode > 0:
-            self.logger.warning('   ***** SubProcess Failed *****')
+            logger.warning('   ***** SubProcess Failed *****')
             # if this is the case, print the error stream as well
-            for l, _ in self._print_stream(popen.stderr):
-                self.logger.warning('   {0}'.format(l))  # TODO ArcGIS exits after the first AddError is called. Need to find a solution to still print the entire traceback to stderr
+            for l, _ in Executor._print_stream(popen.stderr):
+                if bool(l):
+                    logger.warning('   {0}'.format(l))  # TODO ArcGIS exits after the first AddError is called. Need to find a solution to still print the entire traceback to stderr
 
             # raise the error code
             sys.tracebacklimit = 0
             raise ExternalExecutionError('External execution failed with exit code {0}'.format(popen.returncode), popen.returncode)
         else:
             # all good!
-            self.logger.info('   ***** SubProcess Completed *****')
+            logger.info('   ***** SubProcess Completed *****')
 
         if len(results) > 0:
             return results
@@ -411,12 +519,21 @@ class Executor(object):
     def _print_stream(stream):
         # this is a non-blocking generator that monitors the stream till it reaches the end (end of execution)
         if stream:
-            for line in iter(stream.readline, ""):
+
+            # commpile an ad-hoc function to read lines from stream and convert them if necessary
+            # this is to support Python 2 (returns strings i.e. "") and Python3 (returns byte i.e. b"")
+            def _line_converter():
+                line = stream.readline()
+                if hasattr(line, 'decode'):
+                    line = line.decode('utf-8')
+                return line
+
+            for line in iter(_line_converter, ""):
                 result = re.findall('RESULT: ([^\r\n]*)', line)
                 if result:
                     yield '', result
                 else:
-                    yield line, result
+                    yield line, ''
                 sleep(0.05)  # To make sure to read the entire stream
             # stream.close()
 
@@ -472,13 +589,13 @@ class Executor(object):
                 _pythonpath = _path
 
             try:
-                self._environ['PATH'] = ';'.join(_path + [self._environ['PATH']]).encode('utf8')
+                self._environ['PATH'] = ';'.join(_path + [self._environ['PATH']])#.encode('utf8')
             except KeyError:
-                self._environ['PATH'] = ';'.join(_path).encode('utf8')
+                self._environ['PATH'] = ';'.join(_path)#.encode('utf8')
             try:
-                self._environ['PYTHONPATH'] = ';'.join(_pythonpath + [self._environ['PYTHONPATH']]).encode('utf8')
+                self._environ['PYTHONPATH'] = ';'.join(_pythonpath + [self._environ['PYTHONPATH']])#.encode('utf8')
             except KeyError:
-                self._environ['PYTHONPATH'] = ';'.join(_pythonpath).encode('utf8')
+                self._environ['PYTHONPATH'] = ';'.join(_pythonpath)#.encode('utf8')
 
             # special case for GDAL
             # C://Tests/blabla/external_libs/osgeo or
@@ -498,9 +615,9 @@ class Executor(object):
                     # C://Tests/blabla/external_libs/osgeo/gdal-data or
                     # C://Tests/blabla/external_libs/site-packages/osgeo/gdal-data
                     gdal_data = self._check_dir_path(os.path.join(gdal_path, 'gdal-data'), True)
-                    self._environ['PATH'] = ';'.join([gdal_path, gdal_data, gdal_plugins, self._environ['PATH']]).encode('utf8')
-                    self._environ['GDAL_DRIVER_PATH'] = gdal_plugins.encode('utf8')
-                    self._environ['GDAL_DATA'] = gdal_data.encode('utf8')
+                    self._environ['PATH'] = ';'.join([gdal_path, gdal_data, gdal_plugins, str(self._environ['PATH'])])#.encode('utf8')
+                    self._environ['GDAL_DRIVER_PATH'] = gdal_plugins#.encode('utf8')
+                    self._environ['GDAL_DATA'] = gdal_data#.encode('utf8')
                     break
 
         else:
@@ -553,3 +670,4 @@ class Executor(object):
                 return py_exe_path
             path.pop(-1)
         raise RuntimeError('Could not find the python executable')
+

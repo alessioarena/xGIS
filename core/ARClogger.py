@@ -10,6 +10,12 @@ try:
     from arcpy import AddMessage, AddWarning, AddError
 except ImportError:
     pass
+
+try:
+    from qgis.core import QgsMessageLog, Qgis
+except ImportError:
+    pass
+
 import logging
 logging.captureWarnings(True)
 # this is to pin the logger associated with this module, and retrieve it later
@@ -131,8 +137,17 @@ class ARCMessageHandler(logging.Handler):
         log_entry = re.sub(r'(?:\r\n|\r|\n)$', '', log_entry)
         try:
             AddMessage(log_entry)  # this should print to stdout by default, but also retrieved by ArcMAP
+            return
         except NameError:
-            sys.stdout.write(log_entry + '\n')  # Fallback if arcpy cannot be loaded
+            pass
+
+        try:
+            QgsMessageLog.logMessage(log_entry, level=Qgis.Info)
+            return
+        except NameError:
+            pass
+
+        sys.stdout.write(log_entry + '\n')  # Fallback if arcpy cannot be loaded
         return
 
 
@@ -155,7 +170,15 @@ class ARCWarningHandler(logging.Handler):
         try:
             AddWarning(log_entry)  # Retrieved by ArcMAP, but only visualized differently
         except NameError:
-            sys.stdout.write(log_entry + '\n')  # Fallback if arcpy cannot be loaded
+            pass
+
+        try:
+            QgsMessageLog.logMessage(log_entry, level=Qgis.Warning)
+            return
+        except NameError:
+            pass
+
+        sys.stdout.write(log_entry + '\n')  # Fallback if arcpy cannot be loaded
             # warnings is too messy
             # warnings.warn(log_entry + '\n')  # This is not retrieved by ArcMAP, but handled properly by python
         return
@@ -182,7 +205,15 @@ class ARCErrorHandler(logging.Handler):
         try:
             AddError(log_entry)  # Retrieved by ArcMAP and handled properly
         except NameError:
-            sys.stderr.write(log_entry + '\n')
+            pass
+
+        try:
+            QgsMessageLog.logMessage(log_entry, level=Qgis.Critical)
+            return
+        except NameError:
+            pass
+
+        sys.stderr.write(log_entry + '\n')
         sys.exit(1)  # Kill the process
 
 
