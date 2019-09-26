@@ -31,18 +31,20 @@ class Installer(object):
     whls = False
     pkgs = False
     yaml = False
+    pythonhome = False
+    python_version = 'Python{0}{1}'.format(sys.version_info[0], sys.version_info[1])
     target = './external_libs'
     lib_folder = './external_libs/Python27/site-packages'
     supported_version_cmp = ['===', '~=', '!=', '==', '<=', '>=', '<', '>']
 
     # initialise and run
-    def __init__(self, target=False, pkgs=False, whls=False, yaml=False, dry_run=False):
+    def __init__(self, target=False, pkgs=False, whls=False, yaml=False, dry_run=False, pythonhome=False):
         try:
             # Input checking
             if target:
                 if isinstance(target, basestring):
                     self.target = target
-                    self.lib_folder = os.path.join(os.path.abspath(self.target), 'Python{0}{1}{2}site-packages'.format(sys.version_info[0], sys.version_info[1], os.sep))
+                    self.lib_folder = os.path.join(os.path.abspath(self.target), '{0}{1}site-packages'.format(self.python_version, os.sep))
                     logger.info('Target folder is ' + self.lib_folder)
                 else:
                     raise TypeError("'target' must be a string")
@@ -57,6 +59,8 @@ class Installer(object):
             else:
                 self.dry_run = dry_run
 
+            if pythonhome and os.path.isdir(pythonhome):
+                self.pythonhome = pythonhome
             # Test if you have pip, and install if not
             # also safely import main from pip as self.pipmain
             self.test_pip()
@@ -75,7 +79,7 @@ class Installer(object):
             self.find_wheels()
 
             # check wether you have already all the required packages installed in the target folder
-            if os.path.exists(self.target) and len(os.listdir(self.target)) > (len(self.whls) + len(self.pkgs)):
+            if os.path.exists(self.target) and (len(os.listdir(self.lib_folder)) > (len(self.whls) + len(self.pkgs))):
                 logger.info('Checking whether requirements are already satisfied')
                 test, missing = self.test_environment()
                 if test:
@@ -181,7 +185,7 @@ class Installer(object):
             cmd_line = ['-q', 'pyyaml']
             self._installer(cmd_line, target=os.path.abspath(self.target))
             # add the new path to load yaml
-            site.addsitedir(os.path.join(os.path.abspath(self.target), 'Python{0}{1}{2}site-packages'.format(sys.version_info[0], sys.version_info[1], os.sep)))
+            site.addsitedir(os.path.join(os.path.abspath(self.target), '{0}{1}site-packages'.format(self.python_version, os.sep)))
 
         try:
             import yaml
@@ -348,30 +352,45 @@ class Installer(object):
         if self.pkgs and len(self.pkgs) > 0:
             cmd_line = ['-q', '--disable-pip-version-check'] + self.pkgs
             # cmd_line = ['-q', '--disable-pip-version-check', '--no-cache-dir', '--target'] + [self.target] + self.pkgs
-            self._installer(cmd_line, target=os.path.abspath(self.target), dry_run=self.dry_run)
+            self._installer(cmd_line)
 
     def install_whls(self):
         # method to install wheels using pip
         if self.whls and len(self.whls) > 0:
             # cmd_line = ['-q', '--disable-pip-version-check', '--prefix=' + self.target] + self.whls
             cmd_line = ['-q', '--disable-pip-version-check'] + self.whls
-            self._installer(cmd_line, target=os.path.abspath(self.target), dry_run=self.dry_run)
+            self._installer(cmd_line)
 
-    @staticmethod
-    def _installer(cmd_line, target=False, force=False, dry_run=False):
+    def _installer(self, cmd_line, force=False):
         # general method to run the installation
         # prepend the python call
         if not force and not cmd_line[:4] == ['python', '-m', 'pip', 'install']:
             cmd_line = ['python', '-m', 'pip', 'install'] + cmd_line
-        if target:
+        if self.target:
             environ = os.environ.copy()
-            environ['PYTHONUSERBASE'] = target
+            environ['PYTHONUSERBASE'] = self.target
+            # dealing with PYTHONHOME
+            if self.pythonhome:
+                environ['PYTHONHOME'] = pythonhome
+            # special case for qgis
+            elif 'qgis' in sys.executable.lower():
+                pythonhome = os.path.dirname(os.path.dirname(sys.executable))
+                pythonhome = os.path.join(pythonhome, 'apps' + os.sep + self.python_version)
+                environ['PYTHONHOME'] = pythonhome
+            # TODO review this case
+            else:
+                try:
+                    del environ['PYTHONHOME']
+                except KeyError:
+                    pass
             cmd_line = cmd_line + ['--user']
         else:
             environ = os.environ.copy()
+        
+        logger.debug(environ)
         logger.info('executing ' + ' '.join(cmd_line))
         # run the subprocess
-        if not dry_run:
+        if not self.dry_run:
             installer = subprocess.Popen(
                 args=cmd_line,
                 shell=False,
@@ -400,8 +419,9 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--pkgs', type=str, nargs='+', default=False, help='list of package name to install')
     parser.add_argument('-y', '--yaml', type=str, default=False, help='path to yaml file containing requirements to install')
     parser.add_argument('--dry-run', dest='dry_run', action='store_true', default=False, help='dry run only')
+    parser.add_argument('--pythonhome', type=str, default=False, help='option to define a custom python home to allow full support for non default python installations')
     args = parser.parse_args()
 
     if args.dry_run:
         logger.level = logging.DEBUG
-    Installer(target=args.target, whls=args.whls, pkgs=args.pkgs, yaml=args.yaml, dry_run=args.dry_run)
+    Installer(target=args.target, whls=args.whls, pkgs=args.pkgs, yaml=args.yaml, dry_run=args.dry_run, pythonhome=args.pythonhome)
