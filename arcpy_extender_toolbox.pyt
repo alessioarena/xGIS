@@ -6,18 +6,18 @@ try:
 except Exception:
     raise ImportError('Could not find the arcpy module. Are you running this toolbox from ArcGIS?')
 try:
-    import arcpy_extender
-    import arcpy_extender.ARClogger as log
+    import xgis
+    import xgis.xGISlogger as log
 except ImportError:
-    from core import executor as arcpy_extender
-    from core import ARClogger as log
-logger = log.initialise_logger(to_file='ArcpyExtenderToolbox', force=True)
+    from core import executor as xgis
+    from core import xGISlogger as log
+logger = log.initialise_logger(to_file='xGISToolbox', force=True)
 
 
 class Toolbox(object):
-    stored_parameters_file = os.path.join(os.path.expanduser("~"), 'arcpyextenderparameters.txt')
+    stored_parameters_file = os.path.join(os.path.expanduser("~"), 'xGISparameters.txt')
     def __init__(self):
-        self.label = "Arcpy Extender"
+        self.label = "xGIS"
         self.alias = "Toolbox to perform an external execution"
         # List of tool classes associated with this toolbox
         self.tools = [Extender]
@@ -146,7 +146,7 @@ class Extender(object):
 
         try:
             logger.info('Initialising external executor')
-            executor = arcpy_extender.Executor(cmd_line, external_libs=ext_libs, cwd=wd, logger=logger)
+            executor = xgis.Executor(cmd_line, external_libs=ext_libs, cwd=wd, logger=logger)
             logger.info('Performing the calculation')
             executor.run()
             if out:

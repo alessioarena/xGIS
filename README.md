@@ -1,4 +1,4 @@
-# arcpy_extender
+# xGIS (cross GIS)
 This module was developed to break free from arcpy/ArcGIS delicate environment and leverage Python's full potential from within ArcGIS itself.
 
 This was made possible by leveraging the `os` and `subprocess` libraries installed with any Python environment.

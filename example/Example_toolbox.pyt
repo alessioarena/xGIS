@@ -1,6 +1,6 @@
 import os
 import arcpy
-import arcpy_extender
+import xgis
 
 class Toolbox(object):
     def __init__(self):
