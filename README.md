@@ -21,8 +21,8 @@ Here is a brief diagram explaining how this works:
 Here is a short example on how to print hello word using this tool.
 This approach is equivalent to executing `python -c 'print("hello world!")'` in powershell
 ```python
->>> import arcpy_extender
->>> exe = arcpy_extender.Executor(['python.exe', '-c', 'print("hello world!")'])
+>>> import xgis
+>>> exe = xgis.Executor(['python.exe', '-c', 'print("hello world!")'])
 >>> exe.run()
 15:56:57        Running python.exe externally
 15:56:57           Working directory 'C:\Temp\********'
@@ -42,7 +42,7 @@ The Executor object allows you to control your environment using a simple interf
 # defining a specific executable to use
 >>> py_exe = 'C:/Python27/ArcGISx6410.5/python.exe'
 # initialise the Executor object
->>> exe = arcpy_extender.Executor(args, external_libs=external_libs, executable=py_exe)
+>>> exe = xgis.Executor(args, external_libs=external_libs, executable=py_exe)
 # print the current settings 
 >>> exe.info()
 Current settings are:
@@ -157,7 +157,7 @@ This software is available under the following license:
 ```
 CSIRO Open Source Software Licence Agreement (variation of the BSD / MIT License)
 Copyright (c) 2019, Commonwealth Scientific and Industrial Research Organisation (CSIRO) ABN 41 687 119 230.
-All rights reserved. CSIRO is willing to grant you a licence to this arcpy_extender on the following terms, except where otherwise indicated for third party material.
+All rights reserved. CSIRO is willing to grant you a licence to this xGIS on the following terms, except where otherwise indicated for third party material.
 Redistribution and use of this software in source and binary forms, with or without modification, are permitted provided that the following conditions are met:
 * Redistributions of source code must retain the above copyright notice, this list of conditions and the following disclaimer.
 * Redistributions in binary form must reproduce the above copyright notice, this list of conditions and the following disclaimer in the documentation and/or other materials provided with the distribution.

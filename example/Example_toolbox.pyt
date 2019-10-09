@@ -114,7 +114,7 @@ class AwesomeTool(object):
             args.append(['--debug'])
 
         # let's run this!
-        proc = arcpy_extender.Executor(args, external_libs='external_libs', cwd=os.path.dirname(__file__))
+        proc = xgis.Executor(args, external_libs='external_libs', cwd=os.path.dirname(__file__))
         proc.run()
 
         # if the output file exists, assign it to the output parameter (this is hidden in the GUI)
