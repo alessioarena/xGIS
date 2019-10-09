@@ -41,7 +41,7 @@ if 'qgis' in locals():
     # this is a modified QgsTask that supports subprocess execution
     class QgsExecutorTask(QgsTask):
         iface = iface
-        def __init__(self, description, popen_args, stream_handler, logger):
+        def __init__(self, description, popen_args, stream_handler, logger, post_task_function=False):
             super().__init__(description, QgsTask.CanCancel)
             if not isinstance(popen_args, dict):
                 raise TypeError('popen_args must be a dictionary')
@@ -50,6 +50,7 @@ if 'qgis' in locals():
             self.logger = logger
             self.exception = None
             self.output = []
+            self.post_task_function = post_task_function
 
         def run(self):
 
@@ -70,15 +71,23 @@ if 'qgis' in locals():
                 self.exception = exception
                 return False
 
-            self.output = result
+            if not isinstance(result, list):
+                self.output = []
+            else:
+                self.output = result
+
             return True
 
         def finished(self, result):
             if result:
                 self.logger.info('Task succesfully Completed')
+                if self.post_task_function:
+                    output = self.post_task_function(self.output)
+                else:
+                    output = self.output
 
                 # if I can detect a QGIS graphic interface
-                for r in self.output:
+                for r in output:
                     if os.path.exists(r):
                         name = os.path.basename(r)
                         self.logger.info('Trying to load the result: {0}'.format(r))
@@ -107,9 +116,11 @@ class Executor(object):
     _environ = os.environ.copy()
     logger = module_logger
     host = None
+    post_task_function = False
+    task_id = None
 
     # initialise
-    def __init__(self, cmd_line, executable=False, external_libs=False, cwd=False, logger=False):
+    def __init__(self, cmd_line, executable=False, external_libs=False, cwd=False, logger=False, post_task_function=False):
         """Initialize the Executor object setting the parameters for the subprocess call
 
         Arguments:
@@ -130,6 +141,10 @@ class Executor(object):
             logging.Logger to use for stream handling.
             If False, it will default to an internal logging.Logger
             If None, logging will be disabled for anything but ERROR and CRITICAL levels
+        post_task_function : callable, optional (default : False)
+            Only for QGIS. This function will be called once the background task is finished.
+            Input to this function will be a list of string as returned from the Executor.run function.
+            Output of this function can be a list of strings representing path of files to load back in QGIS
 
         Returns:
         -----------
@@ -138,6 +153,8 @@ class Executor(object):
         """
         # detect the host
         self.detect_host()
+        # set the post_task_function as required
+        self.set_post_task_function(post_task_function)
         # test and set the working directory
         self.set_cwd(cwd)
         # test and set executable, defaulting to python interpreter
@@ -163,7 +180,6 @@ class Executor(object):
         except NameError:
             pass
 
-
     # general internal method to check input path
     def _check_paths(self, dir, is_file=False, is_dir=False, is_executable=False):
         if (is_file + is_dir + is_executable) != 1:
@@ -186,6 +202,16 @@ class Executor(object):
                 return d
         else:
             raise IOError("The argument '{0}' is not pointing to a valid {1}".format(dir, test_str))
+
+    # method to set the post_task_function (QGIS only)
+    def set_post_task_function(self, function):
+        if function is False or self.host != 'qgis':
+            pass
+        else:
+            if callable(function):
+                self.post_task_function = function
+            else:
+                raise TypeError('The argument post_task_function must be a callable or False')
 
     # method to set the executable
     def set_executable(self, executable):
@@ -447,13 +473,13 @@ class Executor(object):
         }
 
         if self.host == 'qgis':
-            globals()['qgis_executor_task'] = QgsExecutorTask('QgsExecutorTask', popen_args, self._stream_handler, self.logger)
-            task_id = QgsApplication.taskManager().addTask(globals()['qgis_executor_task'])
+            globals()['qgis_executor_task'] = QgsExecutorTask('QgsExecutorTask', popen_args, self._stream_handler, self.logger, post_task_function=self.post_task_function)
+            self.task_id = QgsApplication.taskManager().addTask(globals()['qgis_executor_task'])
 
-            if task_id == 0:
+            if self.task_id == 0:
                 raise RuntimeError('The background task could not be added')
             else:
-                self.logger.info('Task {0} scheduled'.format(task_id))
+                self.logger.info('Task {0} scheduled'.format(self.task_id))
         else:
             # start the non-blocking subprocess
             run = subprocess.Popen(
