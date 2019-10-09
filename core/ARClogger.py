@@ -5,16 +5,32 @@ import operator
 import threading
 import warnings
 import datetime
-# safe import the ArcGIS methods
+
+# setting up the support for ArcGIS redirection
 try:
     from arcpy import AddMessage, AddWarning, AddError
+    log_info = AddMessage
+    log_warning = AddWarning
+    log_error = AddError
 except ImportError:
     pass
 
+# setting up the support for QGIS redirection
 try:
     from qgis.core import QgsMessageLog, Qgis
+    log_info = lambda msg: QgsMessageLog.logMessage(msg, level=Qgis.Info)
+    log_warning = lambda msg: QgsMessageLog.logMessage(msg, level=Qgis.Warning)
+    log_error = lambda msg: QgsMessageLog.logMessage(msg, level=Qgis.Critical)
 except ImportError:
     pass
+
+# fallback redirection method
+try:
+    log_info
+except NameError:
+    log_info = lambda msg: sys.stdout.write(msg + '\n')
+    log_warning = lambda msg: sys.stdout.write(msg + '\n')
+    log_error = lambda msg: sys.stderr.write(msg + '\n')
 
 import logging
 logging.captureWarnings(True)
@@ -122,7 +138,7 @@ class ConditionalFilter(logging.Filter):
 class ARCMessageHandler(logging.Handler):
     def __init__(self):
         self.filters = [ConditionalFilter(logging.INFO, operator.le)]  # handling logging.debug and logging.info
-        self.level = 0
+        self.level = logging.INFO
         self._name = None
         self.formatter = logging.Formatter(fmt='%(asctime)-15s %(message)s', datefmt='%H:%M:%S')
         self.lock = threading.RLock()
@@ -135,19 +151,7 @@ class ARCMessageHandler(logging.Handler):
         log_entry = log_entry.replace('\n', '\n' + ' ' * 16)
         log_entry = re.sub(r'(?:(?:\r\n|\r|\n)\s*)+', '\r\n', log_entry)  # to handle multiline with empty lines
         log_entry = re.sub(r'(?:\r\n|\r|\n)$', '', log_entry)
-        try:
-            AddMessage(log_entry)  # this should print to stdout by default, but also retrieved by ArcMAP
-            return
-        except NameError:
-            pass
-
-        try:
-            QgsMessageLog.logMessage(log_entry, level=Qgis.Info)
-            return
-        except NameError:
-            pass
-
-        sys.stdout.write(log_entry + '\n')  # Fallback if arcpy cannot be loaded
+        log_info(log_entry)
         return
 
 
@@ -167,20 +171,9 @@ class ARCWarningHandler(logging.Handler):
         log_entry = log_entry.replace('\n', '\n' + ' ' * 16)  # This offsets multiline
         log_entry = re.sub(r'(?:(?:\r\n|\r|\n)\s*)+', '\r\n', log_entry)  # to handle multiline with empty lines
         log_entry = re.sub(r'(?:\r\n|\r|\n)$', '', log_entry)  # to suppress the last new line (will be appended by the function to emit the message)
-        try:
-            AddWarning(log_entry)  # Retrieved by ArcMAP, but only visualized differently
-        except NameError:
-            pass
-
-        try:
-            QgsMessageLog.logMessage(log_entry, level=Qgis.Warning)
-            return
-        except NameError:
-            pass
-
-        sys.stdout.write(log_entry + '\n')  # Fallback if arcpy cannot be loaded
-            # warnings is too messy
-            # warnings.warn(log_entry + '\n')  # This is not retrieved by ArcMAP, but handled properly by python
+        log_warning(log_entry)
+        # warnings is too messy
+        # warnings.warn(log_entry + '\n')  # This is not retrieved by ArcMAP, but handled properly by python
         return
 
 
@@ -202,19 +195,8 @@ class ARCErrorHandler(logging.Handler):
         log_entry = log_entry.replace('\n', '\n' + ' ' * 16)  # This offsets multiline
         log_entry = re.sub(r'(?:(?:\r\n|\r|\n)\s*)+', '\r\n', log_entry)  # to handle multiline with empty lines
         log_entry = re.sub(r'(?:\r\n|\r|\n)$', '', log_entry)  # to suppress the last new line (will be appended by the function to emit the message)
-        try:
-            AddError(log_entry)  # Retrieved by ArcMAP and handled properly
-        except NameError:
-            pass
-
-        try:
-            QgsMessageLog.logMessage(log_entry, level=Qgis.Critical)
-            return
-        except NameError:
-            pass
-
-        sys.stderr.write(log_entry + '\n')
-        sys.exit(1)  # Kill the process
+        log_error(log_entry)
+        # sys.exit(1)  # Kill the process
 
 
 # handler for log file
@@ -298,6 +280,7 @@ def initialise_logger(i_logger=False, to_file=False, force=True, level=logging.I
     # if the logger does not have any handler, initialise it
     if len(i_logger.handlers) == 0:
         # if we want to log to disk
+        i_logger.setLevel(level)
         if to_file is True or isinstance(to_file, basestring):
             filename = _get_log_filename(to_file)
             i_logger = _log_to_file(i_logger, filename, level)
