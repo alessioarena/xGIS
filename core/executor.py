@@ -14,8 +14,8 @@ try:
     import qgis
 except ImportError:
     pass
-from . import xGISlogger
-module_logger = xGISlogger.initialise_logger(to_file=False, force=True)
+from . import log_utils
+module_logger = log_utils.initialise_logger(to_file=False, force=True)
 
 # for python 2 and python 3 compatibility
 try:
