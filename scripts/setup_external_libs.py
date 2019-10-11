@@ -97,8 +97,9 @@ class Installer(object):
             # running the installation
             logger.info('***** Running the installation *****')
             try:
-                self.install_whls()
-                self.install_pkgs()
+                self.install()
+                # self.install_whls()
+                # self.install_pkgs()
             except Exception:
                 # clean up if something went wrong
                 if os.path.isdir(self.target):
@@ -347,6 +348,14 @@ class Installer(object):
         # e.g.   1.2.3 == 1.2.3 and 1.2.0 == 1.2
         return ['==', '<=', '>='] + compatible
 
+    def install(self):
+        cmd_line = ['-q', '--disable-pip-version-check']
+        if self.pkgs and len(self.pkgs) > 0:
+            cmd_line += self.pkgs
+        if self.whls and len(self.whls) > 0:
+            cmd_line += self.whls
+        self._installer(cmd_line)
+
     def install_pkgs(self):
         # method to install python packages using pip
         if self.pkgs and len(self.pkgs) > 0:
@@ -383,7 +392,7 @@ class Installer(object):
                     del environ['PYTHONHOME']
                 except KeyError:
                     pass
-            cmd_line = cmd_line + ['--user']
+            cmd_line = cmd_line + ['--user', '--upgrade', '--force-reinstall']
         else:
             environ = os.environ.copy()
         
@@ -408,12 +417,103 @@ class Installer(object):
 
         return
 
+def _find_best_version(options, major=False, minor=False, bit=False):
+    newer_version = {
+        'major': 0,
+        'minor': 0,
+        'bit': 0,
+        'path': None
+    }
+
+    for opt in options:
+        if any([major, minor, bit]):
+            if (not major or opt['major'] == major) and (not minor or opt['minor'] == minor) and (not bit or opt['bit'] == bit):
+                pass
+            else:
+                continue
+        if opt['major'] > newer_version['major']:
+            newer_version = opt
+        elif opt['major'] < newer_version['major']:
+            continue
+        else:
+            if opt['minor'] > newer_version['minor']:
+                newer_version = opt
+            elif opt['minor'] < newer_version['minor']:
+                continue
+            else:
+                if opt['bit'] > newer_version['bit']:
+                    newer_version = opt
+                elif opt['bit'] < newer_version['bit']:
+                    continue
+    return newer_version
+
+
+def find_arcgis_env(major=False, minor=False, bit=False, python_version=False):
+    import re
+    import operator
+    basepath = 'C:\\Python27'
+    exes = []
+
+    if python_version == 3:
+        raise NotImplementedError()
+    if os.path.isdir(basepath):
+        for p in os.listdir(basepath):
+            if 'arcgis' in p.lower():
+                py_path = os.path.join(os.path.join(basepath, p), 'python.exe')
+                if os.path.isfile(py_path):
+                    info = re.search('.*ArcGIS(x64)?([0-9]*)\.([0-9]*)', p)
+                    if info is None:
+                        raise RuntimeError('Could not understand the ArcGIS version of: ' + p)
+                    exe_info = {
+                        'major': int(info.group(2)),
+                        'minor': int(info.group(3)),
+                        'bit': 32 if info.group(1) is None else 64,
+                        'path' : py_path
+                    }
+                    exes.append(exe_info)
+    return _find_best_version(exes, major, minor, bit)['path']
+
+
+def find_qgis_env(major=False, minor=False, bit=False, python_version=False):
+    from distutils.spawn import find_executable
+    import re
+    qgis_path = find_executable('qgis-bin.exe')
+    if qgis_path is not None:
+        info = re.search('.*(x86)?.*QGIS\s([0-9]*)\.([0-9]*).*', qgis_path)
+        if info is None:
+            raise RuntimeError('Could not understand the QGIS version of: ' + qgis_path)
+
+        exe_info = {
+            'major': int(info.group(2)),
+            'minor': int(info.group(3)),
+            'bit': 64 if info.group(1) is None else 32,
+            'path':None
+        }
+        if python_version == 2:
+            py_path = os.path.join(os.path.dirname(qgis_path), 'python.exe')
+        else:
+            py_path = os.path.join(os.path.dirname(qgis_path), 'python3.exe')
+        if os.path.isfile(py_path):
+            exe_info['path'] = py_path
+
+        return _find_best_version([exe_info], major, minor, bit)['path']
+
 
 # command line interface
 if __name__ == '__main__':
     import argparse
 
-    parser = argparse.ArgumentParser(description='Utility to install dependencies locally')
+    utility_parser = argparse.ArgumentParser(add_help=False)
+    utility_group = utility_parser.add_argument_group('Utilities')
+    utility_group.add_argument('--find_arcgis_env', action='store_true', default=False, help='Finds and returns the path of the requested ArcGIS Python environment')
+    utility_group.add_argument('--find_qgis_env', action='store_true', default=False, help='Finds and returns the path of the requested QGIS Python environment')
+    utility_group.add_argument('--major', type=int, default=False, help='Major version of ArcGIS/QGIS to search')
+    utility_group.add_argument('--minor', type=int, default=False, help='Minor version of ArcGIS/QGIS to search')
+    utility_group.add_argument('--python_major', type=int, default=2, choices=[2,3], help='Major Python version of the ArcGIS/QGIS environment to search')
+    utility_group.add_argument('--bit', type=int, choices = [32, 64], default=False, help='Architecture of ArcGIS/QGIS to search')
+
+
+    parser = argparse.ArgumentParser(description='Utility to install dependencies locally', parents=[utility_parser])
     parser.add_argument('-t', '--target', type=str, default='external_libs', help='Folder name to use as target location for the installation')
     parser.add_argument('-w', '--whls', type=str, nargs='+', default=False, help='list of wheels name to install')
     parser.add_argument('-p', '--pkgs', type=str, nargs='+', default=False, help='list of package name to install')
@@ -422,6 +522,17 @@ if __name__ == '__main__':
     parser.add_argument('--pythonhome', type=str, default=False, help='option to define a custom python home to allow full support for non default python installations')
     args = parser.parse_args()
 
-    if args.dry_run:
-        logger.level = logging.DEBUG
-    Installer(target=args.target, whls=args.whls, pkgs=args.pkgs, yaml=args.yaml, dry_run=args.dry_run, pythonhome=args.pythonhome)
+    if args.find_arcgis_env:
+        path = find_arcgis_env(args.major, args.minor, args.bit, args.python_major)
+        if path:
+            print(path)
+
+    elif args.find_qgis_env:
+        path = find_qgis_env(args.major, args.minor, args.bit, args.python_major)
+        if path:
+            print(path)
+
+    else:
+        if args.dry_run:
+            logger.level = logging.DEBUG
+        Installer(target=args.target, whls=args.whls, pkgs=args.pkgs, yaml=args.yaml, dry_run=args.dry_run, pythonhome=args.pythonhome)
