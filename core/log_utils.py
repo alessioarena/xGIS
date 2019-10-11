@@ -72,8 +72,8 @@ class LogToLevel(object):
     Example:
     -----------
         import logging
-        import arclogger
-        logger = arclogger.logger
+        import log_utils
+        logger = log_utils.logger
 
         logger.info('you should see this message')
         logger.debug('you are not going to see this message')
@@ -249,14 +249,14 @@ def initialise_logger(i_logger=False, to_file=False, force=True, level=logging.I
     Arguments:
     -----------
     i_logger : logging.Logger or False
-        logger to initialise. If False, it will use the logger defined within this module (arclogger.logger)
+        logger to initialise. If False, it will use the logger defined within this module (log_utils.logger)
         This can be easily retrieved later on even from a different module
     to_file : bool or str, optional (default : False)\n
         if False, no log will be saved on disk
-        if True, a log file will be saved in your user home directory under ArcLogger_logs/ArcLogger_[date].log
+        if True, a log file will be saved in your user home directory under Logger_logs/Logger_[date].log
         if str, this needs to be:
         - a path to a directory
-            [path/to/dir]/ArcLogger_[user]_[date].log
+            [path/to/dir]/Logger_[user]_[date].log
         - a filename
             ./[filename]_[date].logs
         - a rootname
@@ -330,12 +330,12 @@ def _log_to_file(i_logger, filename, level):
 def _get_log_filename(to_file):
     # default path
     home = os.path.expanduser("~")
-    default_path = os.path.join(home, 'ArcLogger_logs')
+    default_path = os.path.join(home, 'Logger_logs')
 
     # default filename
     username = os.path.split(home)[-1]
     date_str = datetime.datetime.today().strftime("%Y%m%d")
-    default_filename = '_'.join(['ArcLogger', username, date_str]) + '.log'
+    default_filename = '_'.join(['Logger', username, date_str]) + '.log'
 
     if to_file is True:
         # we want to use the defaults
