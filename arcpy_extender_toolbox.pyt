@@ -7,10 +7,10 @@ except Exception:
     raise ImportError('Could not find the arcpy module. Are you running this toolbox from ArcGIS?')
 try:
     import xgis
-    import xgis.xGISlogger as log
+    import xgis.log_utils as log
 except ImportError:
     from core import executor as xgis
-    from core import xGISlogger as log
+    from core import log_utils as log
 logger = log.initialise_logger(to_file='xGISToolbox', force=True)
 
 
