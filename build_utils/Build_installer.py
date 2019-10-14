@@ -81,7 +81,7 @@ class Builder():
         # load the config file
         if os.path.isfile('build_config.yaml'):
             logging.info('  Reading options from {0}'.format(os.path.abspath('build_config.yaml')))
-            self.options = yaml.load(open('build_config.yaml'))
+            self.options = yaml.load(open('build_config.yaml'), Loader=yaml.FullLoader)
         else:
             raise IOError('The build_config.yaml file is missing')
 

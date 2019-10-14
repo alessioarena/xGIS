@@ -38,21 +38,23 @@
 
 
 # General info
-name: ArcpyExtensions
+name: TOOLBOX_NAME
 version: 0.8
 
 # Package build options
-build_folder: # ['', path/relative/to/root]
+build_folder: # ['', path/relative/to/root] # path to use for the build (temporary files)
+installer_script: setup.bat # ['', path/relative/to/root, 'setup.bat'] # script to run after the extraction. if None the post extraction task will be skipped
+
+# setup.bat options
 ArcGIS_support: True # [True, False]
 QGIS_support: True # [True, False]
 Python_version: 2  # ['', 2, 3] # for backend scripts
-installer_script: setup.bat # ['', path/relative/to/root, 'setup.bat'] # script to run after the extraction. if None the post extraction task will be skipped
 splash_screen: Welcome.html # ['', path/relative/to/root/.html] # If specified will open the given html upon successful installation
 
-# Folders (and files) to include
+# Folders (and files) to include.
 include_data: # list of files and folders to include
-  .:
-  arctools: # To include a folder
+  # default values for most projects
+  .: # to include the entire root folder
   xgis:
     core: # to include specific files in a folder
       - __init__.py
@@ -62,19 +64,20 @@ include_data: # list of files and folders to include
     scripts:
       - setup_external_libs.py
       - getpip.py
-  media:
+  # here add you additional packages
 
-# Folders (and files) to exclude.
-# If the folder in not in include_data it will not have effect
+# Folders (and files) to exclude. If the folder in not in include_data it will not have effect
 exclude_data:
+  # default values for most projects
   .:
     - .gitignore
     - .gitmodules
+  # here add your files to exclude
 
-# folders to be remapped. Paths are relative to the root folder
-# if the folder is not in include_data it will not have effect
+# folders to be remapped. Paths are relative to the root folder. If the folder is not in include_data it will not have effect
 remap_folders:
+  # default values for most projects
   xgis:
     core: xgis\
     scripts: .\
-
+  # here add your folders to remap
