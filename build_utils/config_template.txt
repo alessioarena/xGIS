@@ -1,0 +1,14 @@
+;!@Install@!UTF-8!
+Title="{name}"
+BeginPrompt="This will install the {name} Toolbox version {version}.\n This toolbox requires:\n - ArcGIS >= 10.5\n - ArcGIS Background Geoprocessing (x64)\n - an internet connection\n\n Do you want to begin the installation?"
+ExtractPathText="Install path (only local disk allowed)"
+InstallPath="%HOMEPATH%\\"
+OverwriteMode="2"
+SetEnvironment="ARCGISSUPPORT={arcgis}"
+SetEnvironment="QGISSUPPORT={qgis}"
+SetEnvironment="PYTHONVERSION={python}"
+SetEnvironment="SPLASHSCREEN={splash}"
+RunProgram="{installer}"
+GUIFlags="4+64"
+FinishMessage="Installation finished. Please check %%T\\xGIS\\{name}"
+;!@InstallEnd@!

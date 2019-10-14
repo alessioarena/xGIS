@@ -9,3 +9,6 @@
 
 # hidden folders used as cache
 .*/
+
+# Build folder
+build_utils/Build/*
