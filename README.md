@@ -1,25 +1,28 @@
 # xGIS (cross GIS)
-This module was developed to break free from arcpy/ArcGIS delicate environment and leverage Python's full potential from within ArcGIS itself.
+This module was developed to facilitate the integration of custom code into GIS software like ArcGIS and QGIS.
 
-This was made possible by leveraging the `os` and `subprocess` libraries installed with any Python environment.
-Those allow to directly interface with the operating system, and therefore to any executable (including Python).
-
-So, what is the catch? we are not sharing memory between ArcGIS and the rest, meaning that we cannot pass variables and we have minimal communication.
-Practically, your external python code must:
- - be completely self sufficient by loading and saving to disk
- - you cannot use arcpy from within it (but you can go back and forth between ArcGIS and the rest as many times as you like)
- - have a command line interface (typically achieved by using `argparse`, see `setup_external_libs.py`)
-
-Here is a brief diagram explaining how this works:
+The implementation of this solution gravitates around the default Python modules `os` and `subprocess`. Thanks to their functionalities, xGIS is capable of creating and manage new child processes (where the execution of the custom code will happen) while existing within the mapping software Python environment (to maintain connection with the software and its graphic interface).
 <p align="center">
-  <img src="docs/execute_externally_workflow.png" width="500">
+  <img src="docs/xgis_process_dependencies.png" width="500">
 </p>
 
+As the execution of the custom code happens in a brand new child process, xGIS can run softwre written in any language provided that resources to run it are available and accessible. Conversely, xGIS is Python module and can be imported and used in both Python 2 and 3.
+
+This library comes with much more than the Python importable resources, and is in fact a full development framework to assist you designing, developing and deploying your custom mapping software extension. 
+Those are:
+- _Executor_ Python object (within the importable xGIS resources). This is a highly automated object that can create and manage the child process, while handling the connection between child process and graphic interface
+- _setup_external_libs.py_ script (and _scripts_) to help you installing additional Python resources required to run your custom code. This is necessary to avoid the corruption of ArcGIS/QGIS Python environments
+- _build_installer.py_ script (and _build_utils_) to assist you in creating a Windows installer for your extension.
+
+## Requirements
+The only real requirement is to enable in your custom code a command line interface. Compiled languages generally have this by design, while other languages like R can be set up using third party libraries (e.g. `argparse` in Python).
+
+You will also need to develop the graphic interface in ArcGIS and QGIS. This can be done easily using their libraries `arcpy` and `pyqgis`, and in the case of QGIS by using QtDesigner. An ArcGIS example is provided in the `example` folder
 
 
-## Example usage
-Here is a short example on how to print hello word using this tool.
-This approach is equivalent to executing `python -c 'print("hello world!")'` in powershell
+## Executor: Hello World!
+To print `hello world` in Python you can run the command `python -c 'print("hello world!")'`.
+Similarly, in xGIS you can do:
 ```python
 >>> import xgis
 >>> exe = xgis.Executor(['python.exe', '-c', 'print("hello world!")'])
@@ -32,14 +35,14 @@ This approach is equivalent to executing `python -c 'print("hello world!")'` in 
 15:56:58           hello world!
 15:56:58           ***** SubProcess Completed *****
 ```
-
-The Executor object allows you to control your environment using a simple interface. For example:
+## Executor: Usage
+However, most of the time you want to have control on what to execute and how. Those parameters can be easily controlledin the Executore by doing: 
 ```python
-# defining arguments
+# defining arguments for the custom code
 >>> args = ['sklearn_script.py', 'input.csv', '--outname', 'out.csv']
-# defining the folder location where additional Python libraries are stored (those will have priority over others)
+# defining the folder location where the custom code dependencies are installed
 >>> external_libs = '../../project_folder/external_libs/'
-# defining a specific executable to use
+# defining a specific executable to use (for Python it will be the interpreter)
 >>> py_exe = 'C:/Python27/ArcGISx6410.5/python.exe'
 # initialise the Executor object
 >>> exe = xgis.Executor(args, external_libs=external_libs, executable=py_exe)
@@ -82,8 +85,7 @@ Running 'C:\xxxx\xxxx_xxxx\xxxx\sklearn_script.py' externally
 ['out.csv']
 ```
 
-## Advanced functionalities
-
+## Executor: Advanced functionalities
 The Executor object handles automatically most of the set up, but gives you control and visibility over most of it.
 This object offers the following attributes and methods:
 ```python
@@ -106,23 +108,25 @@ Executor.run()          # run the subprocess call
 ExternalExecutionError  # error raised when the execution fails. It exposes the errno exit code reported by the subprocess
 ```
 
-Message passing functionalities are limited, but the Executor will automatically retrieve lines starting with `RESULT: ` and return their content (by invoking the run() method).
-This allows you to communicate basic information like a file name or outcome of an operation.
-This should not be used to pass large information.
+## Executor: User Experience Integration
+The Executore handles most of the user experience integration including:
+- integration with graphic interface
+- logging facility
+- user cancellation
+- background processing
+- output loading
 
-The Executor will also monitor stdout, stderr and the exit code.
-Stdout will be streamed back to the parent process (arcpy/ArcGIS) using the defined logger
-Stderr will be only streamed back if the exit code is not 0 (abnormal termination).
+The entire output stream generated by the custom code is redirected to the mapping software graphic interface by using a custom logger. This is implemented in the `log_utils` importable submodule (accessible as `xgis.log_utils`). This logger can be customised as any other `logging` logger if required.
+The Executor will also monitor for the specific pattern `RESULT:`. Anything following this pattern will be captured and returned upon successful process completion. This can be used to pass to the parent process simple information like full path of results on disk.
 
 
-## Setting up your environment in Python
-This repository provides you a convenient script to help you installing python modules and wheels in the right way.
-This is located in Scripts/setup_external_libs.py and has a handy command line interface.
+## Setup_external_libs: usage
+This repository provides you a convenient script to help you installing Python custom code dependencies.
 This can be as easy as:
 ```bash
 >>> python.exe ./Scripts/setup_external_libs.py --pkgs numpy matplotlib==3.1.1 pandas>=0.23.4 --whls geopandas-0.5.0-py2.py3-none-any.whl
 ```
-It also supports the definition of a requirements file in the yaml format (to not interfere with python widely used requirements.txt)
+It also supports the definition of a requirements file in the yaml format (to not interfere with the widely used Anaconda requirements.txt system)
 This file can be defined as follow
 ```yaml
 pkgs:
@@ -143,13 +147,63 @@ You can also specify the folder location to locally store this separate environm
 >>> python.exe ./Scripts/setup_external_libs.py --target ./myenv
 ```
 
-## Compatibility with ArcGIS
-This tool was developed for ArcGIS Desktop 10.5 and newer versions, but I'm planning to support ArcGIS Pro.
-This will require transitioning to a Python 2 and Python 3 compatible code.
+## Build_installer: usage
+The build_utils folder comes with resources to help you package your entension in an installable self-extracting archive.
+This is an effective way to deploy your code, and is integrated with `setup_external_libs` for Python tools.
+Build parameters can be set up using the build_config.yaml file:
+```yaml
+# General info
+name: TOOLBOX_NAME
+version: 0.8
 
-As this approach requires only common libraries like `os`, `subprocess` and `logging`, there is no additional complexity in supporting newer and different versions of ArcGIS.
+# Package build options
+build_folder: # ['', path/relative/to/root] # path to use for the build (temporary files)
+installer_script: setup.bat # ['', path/relative/to/root, 'setup.bat'] # script to run after the extraction. if None the post extraction task will be skipped
 
-This module is fully importable and usable from within ArcGIS/arcpy, but will allow you to leverage python resources that would otherwise break the delicate ArcGIS Python environment.
+# setup.bat options
+ArcGIS_support: True # [True, False]
+QGIS_support: True # [True, False]
+Python_version: 2  # ['', 2, 3] # for backend scripts
+splash_screen: Welcome.html # ['', path/relative/to/root/.html] # If specified will open the given html upon successful installation
+
+# Folders (and files) to include.
+include_data: # list of files and folders to include
+  # default values for most projects
+  .: # to include the entire root folder
+  xgis:
+    core: # to include specific files in a folder
+      - __init__.py
+      - _version.py
+      - executor.py
+      - log_utils.py
+    scripts:
+      - setup_external_libs.py
+      - getpip.py
+  # here add you additional packages
+
+# Folders (and files) to exclude. If the folder in not in include_data it will not have effect
+exclude_data:
+  # default values for most projects
+  .:
+    - .gitignore
+    - .gitmodules
+  # here add your files to exclude
+
+# folders to be remapped. Paths are relative to the root folder. If the folder is not in include_data it will not have effect
+remap_folders:
+  # default values for most projects
+  xgis:
+    core: xgis\
+    scripts: .\
+  # here add your folders to remap
+```
+
+## Mapping software support
+Currently there is support for:
+- ArcGIS Desktop 10.5 and above
+- QGIS 3 and above
+
+Further planned work will expand this list to include other software and versions. Contribution to this repository are highly encouraged
 
 ## License
 
