@@ -3,7 +3,7 @@ This module was developed to facilitate the integration of custom code into GIS 
 
 The implementation of this solution gravitates around the default Python modules `os` and `subprocess`. Thanks to their functionalities, xGIS is capable of creating and manage new child processes (where the execution of the custom code will happen) while existing within the mapping software Python environment (to maintain connection with the software and its graphic interface).
 <p align="center">
-  <img src="docs/xgis_process_dependencies.png" width="500">
+  <img src="docs/xGIS_process_dependencies.png" width="500">
 </p>
 
 As the execution of the custom code happens in a brand new child process, xGIS can run softwre written in any language provided that resources to run it are available and accessible. Conversely, xGIS is Python module and can be imported and used in both Python 2 and 3.
