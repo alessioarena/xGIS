@@ -535,6 +535,7 @@ class Executor(object):
         else:
             # all good!
             logger.info('   ***** SubProcess Completed *****')
+            logger.info('   ******* powered by xGIS ********')
 
         if len(results) > 0:
             return results
