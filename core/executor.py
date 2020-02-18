@@ -166,6 +166,9 @@ class Executor(object):
         # set the logger
         self.set_logger(logger)
 
+        # set a flag for the child process
+        self._environ['xGIS_child'] = "True"
+
     # method to set the host attribute (currently only arcgis)
     def detect_host(self):
         try:
@@ -561,7 +564,7 @@ class Executor(object):
                     yield '', result
                 else:
                     yield line, ''
-                sleep(0.05)  # To make sure to read the entire stream
+                # sleep(0.05)  # To make sure to read the entire stream
             # stream.close()
 
     # internal method to discover and set subpath for the external libraries. This will modify the environment copy

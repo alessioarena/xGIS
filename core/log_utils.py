@@ -5,6 +5,30 @@ import operator
 import threading
 import warnings
 import datetime
+import logging
+# python 2/3 compatibility
+try:
+    basestring
+    unicode
+except NameError:
+    basestring = (str, bytes)
+    unicode = str
+
+
+def _stream_write(msg, stream):
+    stream.write(msg + '\n')
+    stream.flush()
+
+#setting up the support of xGIS
+try:
+    os.environ['xGIS_child']
+    log_info = lambda msg: _stream_write(msg, sys.stdout)
+    log_warning = lambda msg: _stream_write(msg, sys.stdout)
+    log_error = lambda msg: _stream_write(msg, sys.stderr)
+    environment = 'xgis'
+    format = '%(message)s'
+except KeyError:
+    format = '%(asctime)-15s %(message)s'
 
 # setting up the support for ArcGIS redirection
 try:
@@ -12,6 +36,7 @@ try:
     log_info = AddMessage
     log_warning = AddWarning
     log_error = AddError
+    environment = 'arcgis'
 except ImportError:
     pass
 
@@ -21,6 +46,7 @@ try:
     log_info = lambda msg: QgsMessageLog.logMessage(msg, level=Qgis.Info)
     log_warning = lambda msg: QgsMessageLog.logMessage(msg, level=Qgis.Warning)
     log_error = lambda msg: QgsMessageLog.logMessage(msg, level=Qgis.Critical)
+    environment = 'qgis'
 except ImportError:
     pass
 
@@ -28,23 +54,12 @@ except ImportError:
 try:
     log_info
 except NameError:
-    log_info = lambda msg: sys.stdout.write(msg + '\n')
-    log_warning = lambda msg: sys.stdout.write(msg + '\n')
-    log_error = lambda msg: sys.stderr.write(msg + '\n')
+    log_info = lambda msg: _stream_write(msg, sys.stdout)
+    log_warning = lambda msg: _stream_write(msg, sys.stdout)
+    log_error = lambda msg: _stream_write(msg, sys.stderr)
+    environment = 'python'
 
-import logging
 logging.captureWarnings(True)
-# this is to pin the logger associated with this module, and retrieve it later
-logger = logging.getLogger(__name__)
-
-# python 2/3 compatibility
-try:
-    basestring
-    unicode
-except NameError:
-    basestring = (str, bytes)
-    unicode = str
-
 
 # context manager to change temporarily the log level of a logging.Logger by using the with statement
 class LogToLevel(object):
@@ -72,8 +87,8 @@ class LogToLevel(object):
     Example:
     -----------
         import logging
-        import log_utils
-        logger = log_utils.logger
+        import arclogger
+        logger = arclogger.logger
 
         logger.info('you should see this message')
         logger.debug('you are not going to see this message')
@@ -135,12 +150,12 @@ class ConditionalFilter(logging.Filter):
 
 
 # handler to redirect NOTSET, DEBUG and INFO level to arcpy.AddMessage
-class ARCMessageHandler(logging.Handler):
+class GISMessageHandler(logging.Handler):
     def __init__(self):
         self.filters = [ConditionalFilter(logging.INFO, operator.le)]  # handling logging.debug and logging.info
         self.level = logging.INFO
         self._name = None
-        self.formatter = logging.Formatter(fmt='%(asctime)-15s %(message)s', datefmt='%H:%M:%S')
+        self.formatter = logging.Formatter(fmt=format, datefmt='%H:%M:%S')
         self.lock = threading.RLock()
 
     def emit(self, message):
@@ -148,7 +163,7 @@ class ARCMessageHandler(logging.Handler):
         # log_entry = 'LINE' + log_entry
         if not log_entry.strip():  # to handle empty lines
             return
-        log_entry = log_entry.replace('\n', '\n' + ' ' * 16)
+        log_entry = re.sub('\n(?!$)', '\n' + ' ' * 16, log_entry)
         log_entry = re.sub(r'(?:(?:\r\n|\r|\n)\s*)+', '\r\n', log_entry)  # to handle multiline with empty lines
         log_entry = re.sub(r'(?:\r\n|\r|\n)$', '', log_entry)
         log_info(log_entry)
@@ -156,19 +171,19 @@ class ARCMessageHandler(logging.Handler):
 
 
 # handler to redirect WARNING level to arcpy.AddWarning
-class ARCWarningHandler(logging.Handler):
+class GISWarningHandler(logging.Handler):
     def __init__(self):
         self.filters = [ConditionalFilter(logging.WARN, operator.eq)]  # handling logging.warning
         self.level = logging.WARN
         self._name = None
-        self.formatter = logging.Formatter(fmt='%(asctime)-15s %(message)s', datefmt='%H:%M:%S')
+        self.formatter = logging.Formatter(fmt=format, datefmt='%H:%M:%S')
         self.lock = threading.RLock()
 
     def emit(self, message):
         log_entry = self.format(message)
         if not log_entry.strip():
             return
-        log_entry = log_entry.replace('\n', '\n' + ' ' * 16)  # This offsets multiline
+        log_entry = re.sub('\n(?!$)', '\n' + ' ' * 16, log_entry)
         log_entry = re.sub(r'(?:(?:\r\n|\r|\n)\s*)+', '\r\n', log_entry)  # to handle multiline with empty lines
         log_entry = re.sub(r'(?:\r\n|\r|\n)$', '', log_entry)  # to suppress the last new line (will be appended by the function to emit the message)
         log_warning(log_entry)
@@ -180,19 +195,19 @@ class ARCWarningHandler(logging.Handler):
 # handler to redirect ERROR and CRITICAL level to arcpy.AddError
 # please note that ArcMAP will exit once the first call to arcpy.AddError is finished
 # however you can pass a multiline string to it
-class ARCErrorHandler(logging.Handler):
+class GISErrorHandler(logging.Handler):
     def __init__(self):
         self.filters = [ConditionalFilter(logging.ERROR, operator.ge)]  # handling logging.error, logging.critical and logging.exception
         self.level = logging.ERROR
         self._name = None
-        self.formatter = logging.Formatter(fmt='%(asctime)-15s %(message)s', datefmt='%H:%M:%S')
+        self.formatter = logging.Formatter(fmt=format, datefmt='%H:%M:%S')
         self.lock = threading.RLock()
 
     def emit(self, message):
         log_entry = self.format(message)
         if not log_entry.strip():
             return
-        log_entry = log_entry.replace('\n', '\n' + ' ' * 16)  # This offsets multiline
+        log_entry = re.sub('\n(?!$)', '\n' + ' ' * 16, log_entry)
         log_entry = re.sub(r'(?:(?:\r\n|\r|\n)\s*)+', '\r\n', log_entry)  # to handle multiline with empty lines
         log_entry = re.sub(r'(?:\r\n|\r|\n)$', '', log_entry)  # to suppress the last new line (will be appended by the function to emit the message)
         log_error(log_entry)
@@ -249,14 +264,14 @@ def initialise_logger(i_logger=False, to_file=False, force=True, level=logging.I
     Arguments:
     -----------
     i_logger : logging.Logger or False
-        logger to initialise. If False, it will use the logger defined within this module (log_utils.logger)
+        logger to initialise. If False, it will use the logger defined within this module (arclogger.logger)
         This can be easily retrieved later on even from a different module
     to_file : bool or str, optional (default : False)\n
         if False, no log will be saved on disk
-        if True, a log file will be saved in your user home directory under Logger_logs/Logger_[date].log
+        if True, a log file will be saved in your user home directory under ArcLogger_logs/ArcLogger_[date].log
         if str, this needs to be:
         - a path to a directory
-            [path/to/dir]/Logger_[user]_[date].log
+            [path/to/dir]/ArcLogger_[user]_[date].log
         - a filename
             ./[filename]_[date].logs
         - a rootname
@@ -286,9 +301,9 @@ def initialise_logger(i_logger=False, to_file=False, force=True, level=logging.I
             i_logger = _log_to_file(i_logger, filename, level)
 
         # initialise the logger with the other handlers
-        i_logger.addHandler(ARCMessageHandler())
-        i_logger.addHandler(ARCErrorHandler())
-        i_logger.addHandler(ARCWarningHandler())
+        i_logger.addHandler(GISMessageHandler())
+        i_logger.addHandler(GISErrorHandler())
+        i_logger.addHandler(GISWarningHandler())
         i_logger.setLevel(level)
     # the logger was already initialised
     else:
@@ -300,6 +315,8 @@ def initialise_logger(i_logger=False, to_file=False, force=True, level=logging.I
                 i_logger.removeHandler(h)
             # and call again this method with the clean  logger
             i_logger = initialise_logger(i_logger=i_logger, to_file=to_file, force=False, level=level)
+        else:
+            log_warning("The logger is already initialised. Please rerun this function with force=True")
 
     return i_logger
 
@@ -330,12 +347,12 @@ def _log_to_file(i_logger, filename, level):
 def _get_log_filename(to_file):
     # default path
     home = os.path.expanduser("~")
-    default_path = os.path.join(home, 'Logger_logs')
+    default_path = os.path.join(home, 'ArcLogger_logs')
 
     # default filename
     username = os.path.split(home)[-1]
     date_str = datetime.datetime.today().strftime("%Y%m%d")
-    default_filename = '_'.join(['Logger', username, date_str]) + '.log'
+    default_filename = '_'.join(['ArcLogger', username, date_str]) + '.log'
 
     if to_file is True:
         # we want to use the defaults
@@ -364,3 +381,11 @@ def _get_log_filename(to_file):
         os.makedirs(path)
     # return path_to_file
     return os.path.join(path, filename)
+
+
+# this is to pin the logger associated with this module, and retrieve it later
+logger = logging.getLogger(__name__)
+if len(logger.handlers) == 0:
+    initialise_logger()
+    logger.environment = environment
+
