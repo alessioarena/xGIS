@@ -3,6 +3,8 @@ import sys
 import re
 import logging
 import subprocess
+from queue import Queue, Empty
+from threading import Thread
 from distutils.spawn import find_executable
 from time import sleep
 try:
@@ -442,6 +444,8 @@ class Executor(object):
                     arcpy.env.autoCancelling = True
         return do_context
 
+
+
     # core method
     @_host_management
     def run(self, cancel_test=False):
@@ -501,30 +505,40 @@ class Executor(object):
                 raise
             return result
 
+
+
     # internal handler that monitors stdout, cancels the job following user request and print stderr as required
-    @staticmethod
-    def _stream_handler(popen, logger, cancel_test):
+    def _stream_handler(self, popen, logger, cancel_test):
         results = []
         if not cancel_test:
             def cancel_test():
                 return False
-        # monitor and print output stream as it comes
-        for l, r in Executor._print_stream(popen.stdout):
-            if bool(l):
-                logger.info('   {0}'.format(l))
-            elif bool(r):
-                results.extend(r)
+        # queue for asyncronous message parsing
+        log_queue = Queue()
+        # this thread will monitor the stdout of the external process and append messages to the queue
+        producer_thread = Thread(target=self._print_stream, args=(popen.stdout, log_queue))
+        producer_thread.setDaemon(True)
+        producer_thread.start()
+        while True:
+            # try to retrieve a message from the queue, but if it is empty keep going
+            try:
+                l, r = log_queue.get_nowait()
+                if bool(l):
+                    logger.info('   {0}'.format(l))
+                elif bool(r):
+                    results.extend(r)
+            except Empty:
+                pass
+
+            # test for user cancellation asyncronously
             if cancel_test():
                 logger.warning('   Detected user cancellation')
                 raise KeyboardInterrupt
+            # the external executing is completed
             if popen.poll() is not None:
                 break
 
-        # wait for the subprocess to actually finish
-        while popen.poll() is None:
-            pass
-        #     None
-        # check the return code for abnormal
+        # check the return code for abnormal values
         if popen.returncode > 0:
             logger.warning('   ***** SubProcess Failed *****')
             # if this is the case, print the error stream as well
@@ -546,7 +560,7 @@ class Executor(object):
 
     # internal printer generator used in _stream_handler
     @staticmethod
-    def _print_stream(stream):
+    def _print_stream(stream, log_queue=False):
         # this is a non-blocking generator that monitors the stream till it reaches the end (end of execution)
         if stream:
 
@@ -558,14 +572,19 @@ class Executor(object):
                     line = line.decode('utf-8')
                 return line
 
-            for line in iter(_line_converter, ""):
-                result = re.findall('RESULT: ([^\r\n]*)', line)
-                if result:
-                    yield '', result
-                else:
-                    yield line, ''
-                # sleep(0.05)  # To make sure to read the entire stream
-            # stream.close()
+            # if we have a queue, use that to pass the messages
+            if log_queue is not False:
+                for line in iter(_line_converter, ""):
+                    result = re.findall('RESULT: ([^\r\n]*)', line)
+                    if result:
+                        log_queue.put(('', result))
+                    else:
+                        log_queue.put((line, ''))
+            # otherwise we assume that the stream is now closed and we just need to read the lines
+            # return an iterator to use with for loop
+            else:
+                return [(line, '') for line in iter(_line_converter, "")]
+
 
     # internal method to discover and set subpath for the external libraries. This will modify the environment copy
     def _set_lib_path(self, extlib_path):
