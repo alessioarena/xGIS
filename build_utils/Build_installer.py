@@ -2,6 +2,7 @@ import yaml
 import os
 import sys
 import logging
+import glob
 from shutil import copyfile, rmtree
 from distutils.spawn import find_executable
 logging.basicConfig(format='%(levelname)7s %(message)s', level=10)
@@ -171,26 +172,38 @@ class Builder():
             if not os.path.isdir(dest_path):
                 os.makedirs(dest_path)
 
-            logging.info('looking into {0}'.format(source_path))
-            logging.info('The content should be copied to {0}'.format(dest_path))
+            # logging.info('looking into {0}'.format(source_path))
+            # logging.info('The content should be copied to {0}'.format(dest_path))
 
             # if the content is still a dictionary, go deeper
             if isinstance(sub_include, dict):
                 self.finder(current_subpath, sub_include, sub_exclude, sub_remap)
-            # if the content is a list, we already have the list of files to copy
-            elif isinstance(sub_include, list):
-                self.copier(sub_include, source_path, dest_path)
-            elif sub_include is None:
-                files = self.list_files(k)
-                if isinstance(sub_exclude, list):
-                    files = [f for f in files if f not in sub_exclude]
-                elif sub_exclude is False:
-                    pass
-                else:
-                    raise TypeError('{0} is not a valid file exclusion list'.format(sub_exclude))
-                self.copier(files, source_path, dest_path)
             else:
-                raise TypeError("Could not process the folder '{0}'. Please specify files to include as lists (using -)".format(k) )
+                logging.info('  Working on: {0}\n          Exclude: {1}\n          Remap: {2}\n          Destination: {3}'.format(
+                source_path, 
+                sub_exclude if sub_exclude else '', 
+                sub_remap if sub_remap else '',
+                dest_path))
+                # if the content is a list, we already have the list of files to copy
+                if isinstance(sub_include, list):
+                    files = []
+                    for p in sub_include:
+                        files.extend(list(self.list_files(source_path, p)))
+                    self.copier(files, source_path, dest_path)
+                elif sub_include is None:
+                    files = self.list_files(source_path)
+                    if isinstance(sub_exclude, list):
+                        exclude_files = []
+                        for p in sub_exclude:
+                            exclude_files.extend(list(self.list_files(source_path, p)))
+                        files = [f for f in files if f not in exclude_files]
+                    elif sub_exclude is False:
+                        pass
+                    else:
+                        raise TypeError('{0} is not a valid file exclusion list'.format(sub_exclude))
+                    self.copier(files, source_path, dest_path)
+                else:
+                    raise TypeError("Could not process the folder '{0}'. Please specify files to include as lists (using -)".format(k) )
 
 
     @staticmethod
@@ -199,17 +212,17 @@ class Builder():
             source = os.path.join(source_dir, f)
             destination = os.path.join(target_dir, f)
             if os.path.isfile(source):
-                logging.info('copying {0} to {1}'.format(source, destination))
+                logging.info('copying {0:100s} to {1:100s}'.format(source, destination))
                 copyfile(source, destination)
             else:
                 raise IOError("Could not find file'{0}' in folder '{1}'".folder(f, source_dir))
 
 
     @staticmethod
-    def list_files(path):
-        for f in os.listdir(path):
+    def list_files(path, pattern='*'):
+        for f in glob.glob(os.path.join(path, pattern)):
             if os.path.isfile(os.path.join(path, f)):
-                yield f
+                yield os.path.basename(f)
 
 
 if __name__ == "__main__":

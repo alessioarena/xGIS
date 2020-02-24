@@ -39,7 +39,7 @@ if defined EXECUTABLE (
         )
         @ECHO Installation Successful!
         if NOT "%SPLASHSCREEN%"=="None" (
-            start "%SPLASHSCREEN%"
+            start %SPLASHSCREEN%
         )
         
         @TIMEOUT 30
