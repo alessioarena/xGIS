@@ -153,6 +153,8 @@ class Executor(object):
         out : Executor instance
             Object containing settings (and methods to change them) for the subprocess call. Use Executor.run() to run the task
         """
+        # set a flag for the child process
+        self._environ['xGIS_child'] = "True"
         # detect the host
         self.detect_host()
         # set the post_task_function as required
@@ -168,8 +170,7 @@ class Executor(object):
         # set the logger
         self.set_logger(logger)
 
-        # set a flag for the child process
-        self._environ['xGIS_child'] = "True"
+
 
     # method to set the host attribute (currently only arcgis)
     def detect_host(self):

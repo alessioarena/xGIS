@@ -317,7 +317,8 @@ def initialise_logger(i_logger=False, to_file=False, force=True, level=logging.I
             i_logger = initialise_logger(i_logger=i_logger, to_file=to_file, force=False, level=level)
         else:
             log_warning("The logger is already initialised. Please rerun this function with force=True")
-
+    logger.environment = environment
+    logger.info("Logging environment is {0}".format(logger.environment))
     return i_logger
 
 
@@ -387,5 +388,4 @@ def _get_log_filename(to_file):
 logger = logging.getLogger(__name__)
 if len(logger.handlers) == 0:
     initialise_logger()
-    logger.environment = environment
 
