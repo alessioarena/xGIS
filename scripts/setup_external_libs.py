@@ -455,7 +455,7 @@ def find_arcgis_env(major=False, minor=False, bit=False, python_version=False):
     exes = []
 
     if python_version == 3:
-        raise NotImplementedError()
+        raise NotImplementedError("ArcGIS support is currently limited to ArcGIS Desktop. This offers only Python 2 environments")
     if os.path.isdir(basepath):
         for p in os.listdir(basepath):
             if 'arcgis' in p.lower():
