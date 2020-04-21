@@ -5,6 +5,7 @@ import logging
 import glob
 from shutil import copyfile, rmtree
 from distutils.spawn import find_executable
+import subprocess
 logging.basicConfig(format='%(levelname)7s %(message)s', level=10)
 
 try:
@@ -34,7 +35,7 @@ class Builder():
         logging.info(' Begin to build {0} version {1}'.format(self.options['name'], self.options['version']))
 
         # moving to the right directory
-        self.runtime_dir = os.getcwd()
+        self.runtime_dir = os.path.dirname(os.path.abspath(__file__))
         self.root_dir = os.path.dirname(os.path.dirname(self.runtime_dir))
         logging.info('  Moving to {0}'.format(self.root_dir))
         os.chdir(self.root_dir)
@@ -75,6 +76,10 @@ class Builder():
         if os.path.isfile(installer_filename):
             os.remove(installer_filename)
         os.system('COPY /b 7zsd_All_x64.sfx + config.txt + Installer.7z {0}'.format(installer_filename))
+
+        if os.path.isfile(os.path.join(self.runtime_dir, 'xgis_ssl.pfx')):
+            logging.info(' Signing the installer')
+            self.sign_installer(os.path.join(self.build_dir, installer_filename))
         return installer_filename
 
 
@@ -204,6 +209,26 @@ class Builder():
                     self.copier(files, source_path, dest_path)
                 else:
                     raise TypeError("Could not process the folder '{0}'. Please specify files to include as lists (using -)".format(k) )
+
+    def sign_installer(self, installer_path):
+        import getpass
+        config_file = os.path.join(self.runtime_dir, 'create_certificate.yaml')
+        paths = yaml.load(open(config_file), Loader=yaml.FullLoader)
+
+        password = getpass.getpass('  INPUT Password for the PFX file:')
+
+        arguments = [
+            paths['signtool_path'],
+            'sign',
+            '/f', '{0}'.format(os.path.join(self.runtime_dir, 'xgis_ssl.pfx')),
+            '/p', '{0}'.format(password),
+            '/t', 'http://timestamp.digicert.com',
+            installer_path
+        ]
+        logging.info(arguments)
+        logging.info(' '.join(arguments))
+
+        subprocess.call(arguments)
 
 
     @staticmethod

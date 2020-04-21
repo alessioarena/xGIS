@@ -1,0 +1,7 @@
+# openSSL information
+# openssl req -config openssl.cnf -x509 -newkey rsa:4096 -sha256 -keyout xgis_ssl.key -out xgis_ssl.crt -days 600
+openssl_path: C:\Users\are014\miniconda3_64\Library\bin\openssl.exe
+openssl_config: C:\Users\are014\miniconda3_64\Library\openssl.cnf
+
+# SignTool information
+signtool_path: C:\Program Files\Microsoft SDKs\Windows\v6.0A\bin\signtool.exe

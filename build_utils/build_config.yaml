@@ -38,7 +38,7 @@
 
 
 # General info
-name: TOOLBOX_NAME
+name: ArcpyExtensions
 version: 0.8
 
 # Package build options
@@ -55,6 +55,8 @@ splash_screen: Welcome.html # ['', path/relative/to/root/.html] # If specified w
 include_data: # list of files and folders to include
   # default values for most projects
   .: # to include the entire root folder
+  arctools:
+  media:
   xgis:
     core: # to include specific files in a folder
       - __init__.py
@@ -72,6 +74,9 @@ exclude_data:
   .:
     - .gitignore
     - .gitmodules
+    - "*.pyc"
+  arctools:
+    - "*.pyc"
   # here add your files to exclude
 
 # folders to be remapped. Paths are relative to the root folder. If the folder is not in include_data it will not have effect
