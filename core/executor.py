@@ -153,8 +153,7 @@ class Executor(object):
         out : Executor instance
             Object containing settings (and methods to change them) for the subprocess call. Use Executor.run() to run the task
         """
-        # set a flag for the child process
-        self._environ['xGIS_child'] = "True"
+
         # detect the host
         self.detect_host()
         # set the post_task_function as required
@@ -169,6 +168,7 @@ class Executor(object):
         self.set_external_libs(external_libs)
         # set the logger
         self.set_logger(logger)
+
 
 
 
@@ -365,6 +365,9 @@ class Executor(object):
             self._environ = os.environ.copy()
         else:
             raise TypeError("The 'external_libs' argument must be a string or list of strings")
+        # set a flag for the child process
+        # this needs to be done last
+        self._environ['xGIS_child'] = "True"
 
     # method to set the logger that will handle streams at the host level
     def set_logger(self, i_logger):
