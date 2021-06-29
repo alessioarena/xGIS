@@ -1,3 +1,7 @@
+"""Logging utilities and cross-compatibility for logging facilities across native python, ArcGIS, QGIS and xGIS
+"""
+
+
 import sys
 import os
 import re
@@ -6,6 +10,9 @@ import threading
 import warnings
 import datetime
 import logging
+import time
+import numpy as np
+from functools import partial
 # python 2/3 compatibility
 try:
     basestring
@@ -59,7 +66,104 @@ except NameError:
     log_error = lambda msg: _stream_write(msg, sys.stderr)
     environment = 'python'
 
-logging.captureWarnings(True)
+
+class ProgressBar(object):
+    completed_items = 0
+    start_time = None
+    last_update = None
+    _completion_time = []
+    elapsed_str = ""
+    max_items = None
+
+    @property
+    def completion_time(self):
+        return np.mean(self._completion_time)
+    @completion_time.setter
+    def completion_time(self, new):
+        self._completion_time.append(new)
+        if len(self._completion_time) > 200:
+            self._completion_time = self._completion_time[-200:]
+
+    def __init__(self, max_items=None, bar_length=50, completed_items=None, message=None):
+        self._completion_time = []
+        self.max_items = max_items
+        self.bar_length = bar_length
+        self.update(completed_items, message)
+        self.start_time = time.time()
+
+    def update(self, completed_items=None, message=None, elapsed=True):
+        
+        if completed_items is not None:
+            if self.max_items is None:
+                raise RuntimeError('Cannot update progress if max_items is not known')
+            if completed_items == self.completed_items:
+                return
+            if elapsed is True and self.last_update is not None:
+                self.calculate_elapsed(completed_items)
+            else:
+                self.elapsed_str = ""
+            self.completed_items = completed_items
+            self.last_update = time.time()
+        self.message = message
+        self._writer()
+
+    def calculate_elapsed(self, completed_items):
+        last_completed = self.completed_items
+        now_completed = completed_items
+        last_update = self.last_update
+        now_update = time.time()
+        remaining_items = self.max_items - completed_items
+
+        progress = now_completed - last_completed
+        time_past = now_update -last_update
+
+        remaining_seconds = remaining_items * (time_past / progress)
+        self.completion_time = now_update + remaining_seconds
+        remaining_seconds = self.completion_time - now_update
+
+        self.elapsed_str = "| elapsed time: " + self._print_time(remaining_seconds)
+
+    @staticmethod
+    def _print_time(seconds):
+        elapsed = ""
+        hours = seconds // 3600
+        if hours > 0:
+            elapsed += '{:>2.0f}h '.format(hours)
+            seconds -= hours * 3600
+        minutes = seconds // 60
+        if minutes > 0:
+            elapsed += '{:>2.0f}m '.format(minutes)
+            seconds -= minutes * 60
+        elapsed += '{:2.1f}s '.format(seconds)
+
+        return elapsed
+
+
+    def close(self):
+        self.completed_items = self.max_items
+        self.message = None
+        runtime = time.time() - self.start_time
+        self.elapsed_str = "| completed in " + self._print_time(runtime)
+        self._writer()
+        sys.stdout.write('\n')
+
+    def _writer(self):
+        try:
+            completed_perc = min(1, max(0, self.completed_items / self.max_items))
+            completed_items = self.completed_items
+            max_items = self.max_items
+        except TypeError:
+            completed_perc = 0.0
+            completed_items = '--'
+            max_items = '--'         
+        if self.message is not None:
+            bar = ' ' + self.message
+        else:
+            current = round((completed_perc)*self.bar_length)
+            left = self.bar_length - current
+            bar = '='*current + ' '*left
+        sys.stdout.write('\r{1: >.1%} [{0:{width}s}] | {2}/{3} {elapsed:30s}'.format(bar, completed_perc, completed_items, max_items, width=self.bar_length, elapsed=self.elapsed_str))
+
 
 # context manager to change temporarily the log level of a logging.Logger by using the with statement
 class LogToLevel(object):
@@ -114,12 +218,12 @@ class LogToLevel(object):
 
     # apply the context by setting temporarily the target logging level
     def __enter__(self):
-        self.logger.level = self.internal_level
+        self.logger.setLevel(self.internal_level)
         return self.logger
 
     # get out of the context by resetting to the original logging level
     def __exit__(self, *args):
-        self.logger.level = self.external_level
+        self.logger.setLevel(self.external_level)
 
 
 # general class to apply a operator condition as a logging.Level filter
@@ -153,7 +257,7 @@ class ConditionalFilter(logging.Filter):
 class GISMessageHandler(logging.Handler):
     def __init__(self):
         self.filters = [ConditionalFilter(logging.INFO, operator.le)]  # handling logging.debug and logging.info
-        self.level = logging.INFO
+        self.level = logging.DEBUG
         self._name = None
         self.formatter = logging.Formatter(fmt=format, datefmt='%H:%M:%S')
         self.lock = threading.RLock()
@@ -176,7 +280,7 @@ class GISWarningHandler(logging.Handler):
         self.filters = [ConditionalFilter(logging.WARN, operator.eq)]  # handling logging.warning
         self.level = logging.WARN
         self._name = None
-        self.formatter = logging.Formatter(fmt=format, datefmt='%H:%M:%S')
+        self.formatter = logging.Formatter(fmt= '%(levelname)s '+format, datefmt='%H:%M:%S')
         self.lock = threading.RLock()
 
     def emit(self, message):
@@ -305,6 +409,8 @@ def initialise_logger(i_logger=False, to_file=False, force=True, level=logging.I
         i_logger.addHandler(GISErrorHandler())
         i_logger.addHandler(GISWarningHandler())
         i_logger.setLevel(level)
+        warnings.showwarning = partial(_showwarning, i_logger)
+
     # the logger was already initialised
     else:
         # do we want to re-initialise it?
@@ -317,8 +423,8 @@ def initialise_logger(i_logger=False, to_file=False, force=True, level=logging.I
             i_logger = initialise_logger(i_logger=i_logger, to_file=to_file, force=False, level=level)
         else:
             log_warning("The logger is already initialised. Please rerun this function with force=True")
-    logger.environment = environment
-    logger.info("Logging environment is {0}".format(logger.environment))
+    i_logger.environment = environment
+    i_logger.info("Logging environment is {0}".format(logger.environment))
     return i_logger
 
 
@@ -384,8 +490,30 @@ def _get_log_filename(to_file):
     return os.path.join(path, filename)
 
 
-# this is to pin the logger associated with this module, and retrieve it later
-logger = logging.getLogger(__name__)
-if len(logger.handlers) == 0:
-    initialise_logger()
+def _showwarning(logger, message, category, filename, lineno, file=None, line=None):
+    """
+    Implementation of showwarnings which redirects to logging, which will first
+    check to see if the file parameter is None. If a file is specified, it will
+    delegate to the original warnings implementation of showwarning. Otherwise,
+    it will call warnings.formatwarning and will log the resulting string to a
+    warnings logger named "py.warnings" with level logging.WARNING.
+    """
+    # if file is not None:
+    #     if _warnings_showwarning is not None:
+    #         _warnings_showwarning(message, category, filename, lineno, file, line)
+    s = warnings.formatwarning(message, category, filename, lineno, None)
+    logger.warning("%s", s)
 
+def silence_logger(func):
+    def run_func(*args, **kwargs):
+        with LogToLevel(logger, 30):
+            out = func(*args, **kwargs)
+        return out
+    return run_func
+
+
+# this is to pin the logger associated with this module, and retrieve it later
+logger = logging.getLogger('xGIS/log_utils')
+logging.captureWarnings(True)
+if not logger.hasHandlers():
+    initialise_logger()
