@@ -1,9 +1,9 @@
 import os
+import shutil
 import sys
 import logging
 import subprocess
 import pkgutil
-import pkg_resources as pkg_r
 import site
 from shutil import rmtree
 # initialise logger
@@ -33,12 +33,14 @@ class Installer(object):
     yaml = False
     pythonhome = False
     python_version = 'Python{0}{1}'.format(sys.version_info[0], sys.version_info[1])
-    target = './external_libs'
-    lib_folder = './external_libs/Python27/site-packages'
+    target = os.path.abspath('./external_libs')
+    lib_folder = os.path.abspath('./external_libs/{0}/site-packages'.format(python_version))
+    path = []
     supported_version_cmp = ['===', '~=', '!=', '==', '<=', '>=', '<', '>']
 
     # initialise and run
     def __init__(self, target=False, pkgs=False, whls=False, yaml=False, dry_run=False, pythonhome=False):
+        logger.info('Building environment for {0} located in {1}'.format(self.python_version, os.path.dirname(os.path.dirname(os.__file__))))
         try:
             # Input checking
             if target:
@@ -58,6 +60,8 @@ class Installer(object):
                 raise TypeError('The argument "dry_run" must be a boolean')
             else:
                 self.dry_run = dry_run
+
+            self._override_path()
 
             if pythonhome and os.path.isdir(pythonhome):
                 self.pythonhome = pythonhome
@@ -79,7 +83,8 @@ class Installer(object):
             self.find_wheels()
 
             # check wether you have already all the required packages installed in the target folder
-            if os.path.exists(self.target) and (len(os.listdir(self.lib_folder)) > (len(self.whls) + len(self.pkgs))):
+            # if os.path.exists(self.target) and (len(os.listdir(self.lib_folder)) > (len(self.whls) + len(self.pkgs))):
+            if os.path.exists(self.target):
                 logger.info('Checking whether requirements are already satisfied')
                 test, missing = self.test_environment()
                 if test:
@@ -108,6 +113,48 @@ class Installer(object):
         except Exception:
             logger.exception('Installation failed with the following exception')
             sys.exit(1)  # making sure that we carry over the error outside python
+
+
+    def _override_path(self):
+
+        python_path = os.path.dirname(sys.executable)
+
+        # check for pth file in python folder
+        # this stops from being able to modify PATH using evironmental variables
+        for root, dirs, files in os.walk(python_path):
+            for f in files:
+                if f.endswith('_pth'):
+                    logger.warning('Found a pth file in you local installation. This may be modified to allow path manipulations')
+                    pth_file = os.path.join(root, f)
+                    to_add = False
+                    with open(pth_file, 'r') as fl:
+                        for line in fl.readlines():
+                            if line == 'import site':
+                                break
+                        else:
+                            to_add=True
+                    if to_add:
+                        with open(pth_file, 'a') as fl:
+                            fl.write('import site') # this fixes the environmental lock
+
+        self.path.append(python_path)
+        self.path.append(os.path.join(python_path, 'Lib{0}site-packages'.format(os.sep)))
+        self.path.append(os.path.join(python_path, 'Scripts'))
+        self.path.append(os.path.join(python_path, 'bin'))
+        self.path.append(os.path.join(python_path, 'include'))
+
+        logger.debug('self.path is: {0}'.format(self.path))
+        if 'PYTHONPATH' not in os.environ:
+            pythonpath = [self.path[0]]
+        else:
+            pythonpath = os.environ['PYTHONPATH'].split(';')
+        for p in reversed(self.path):
+            if p not in pythonpath:
+                pythonpath.insert(0, p)
+
+        os.environ['PYTHONPATH'] = ';'.join(pythonpath)
+
+        logger.debug('updated path is: {0}'.format(os.environ['PYTHONPATH']))
 
     def find_wheels(self):
         # find the location of specified wheels
@@ -167,11 +214,13 @@ class Installer(object):
         except ImportError:
             logger.info('Could not find a pip version associated with this python executable. Retrieving and installing the latest version...')
             getpip_path = os.path.join(os.path.dirname(__file__), 'getpip.py')
-            self._installer(['python', getpip_path], force=True)
-            # making sure that we keep the current PYTHONUSERBASE path in our path
-            site.addsitedir(site.USER_BASE)
+            self._installer(['python', getpip_path])
 
-            logger.warning('Pip 9.0.1 succesfully installed. You may have to rerun this script in order to have it working properly')
+            # # making sure that we keep the current PYTHONUSERBASE path in our path
+            # site.addsitedir(os.path.join(os.path.abspath(self.target), '{0}{1}site-packages'.format(self.python_version, os.sep)))
+            site.addsitedir(os.path.join(os.path.dirname(sys.executable), 'Lib{0}site-packages'.format(os.sep)))
+
+            # logger.warning('Pip succesfully installed. You may have to rerun this script in order to have it working properly')
 
         return
 
@@ -183,11 +232,10 @@ class Installer(object):
 
         # load the yaml library if you have it, or install it and load it
         if not bool(pkgutil.find_loader('yaml')):
-            cmd_line = ['-q', 'pyyaml']
-            self._installer(cmd_line, target=os.path.abspath(self.target))
+            cmd_line = ['pyyaml']
+            self._installer(cmd_line)
             # add the new path to load yaml
             site.addsitedir(os.path.join(os.path.abspath(self.target), '{0}{1}site-packages'.format(self.python_version, os.sep)))
-
         try:
             import yaml
         except ImportError:
@@ -213,6 +261,21 @@ class Installer(object):
             raise ValueError("The requirements file is not structured properly. Please make sure to use the following structure:\npkgs:\n  - 'numpy'\n  - 'scipy==1.1.0'\nwhls:\n  - 'gdal_ecw-2.2.3-cp27-none-win_amd64.whl'\n")
         return
 
+    def _find_distros(self, path):
+        # load the pkg_resources library if you have it, or install it and load it
+        
+        if not bool(pkgutil.find_loader('pkg_resources')):
+            cmd_line = ['-q', 'pkg_resources']
+            self._installer(cmd_line)
+            # add the new path to load pkg_resources
+            site.addsitedir(os.path.join(os.path.abspath(self.target), '{0}{1}site-packages'.format(self.python_version, os.sep)))
+        try:
+            import pkg_resources as pkg_r
+        except ImportError:
+            raise RuntimeError('Could not load the pkg_resources package. Please check that the module is correctly installed in one of ' + str(sys.path))
+        return pkg_r.find_distributions(path)
+
+
     def test_environment(self):
         # test the installed libraries
 
@@ -224,16 +287,20 @@ class Installer(object):
         else:
             return False
 
+        logger.debug('looking into {0} for libraries'.format(path))
         # find available distros in specified path
         self.avail_modules = {}
-        distros = pkg_r.find_distributions(path)
+        distros = self._find_distros(path)
         for d in distros:
             self.avail_modules[d.key] = d.version
+
+        logger.debug('Found those modules: {0}'.format(self.avail_modules))
 
         check = []
         missing = []
         # for every package we need to install
         pkgs = self.pkgs if self.pkgs else []
+        logger.debug('Checking packages:{0}'.format(pkgs))
         for p in pkgs:
             # stop if multiple conditions are specified
             if ',' in p:
@@ -255,11 +322,13 @@ class Installer(object):
 
             if self.check_module_availability(n, c, v):
                 check.append(True)
+                self.pkgs.remove(p)
             else:
                 check.append(False)
                 missing.append(p)
 
         whls = self.whls if self.whls else []
+        logger.debug('Checking wheels:{0}'.format(whls))
         for p in whls:
             split = p.split('-')
             if len(split) >= 2:
@@ -349,7 +418,7 @@ class Installer(object):
         return ['==', '<=', '>='] + compatible
 
     def install(self):
-        cmd_line = ['-q', '--disable-pip-version-check']
+        cmd_line = ['--disable-pip-version-check']
         if self.pkgs and len(self.pkgs) > 0:
             cmd_line += self.pkgs
         if self.whls and len(self.whls) > 0:
@@ -359,7 +428,7 @@ class Installer(object):
     def install_pkgs(self):
         # method to install python packages using pip
         if self.pkgs and len(self.pkgs) > 0:
-            cmd_line = ['-q', '--disable-pip-version-check'] + self.pkgs
+            cmd_line = ['--disable-pip-version-check'] + self.pkgs
             # cmd_line = ['-q', '--disable-pip-version-check', '--no-cache-dir', '--target'] + [self.target] + self.pkgs
             self._installer(cmd_line)
 
@@ -367,32 +436,36 @@ class Installer(object):
         # method to install wheels using pip
         if self.whls and len(self.whls) > 0:
             # cmd_line = ['-q', '--disable-pip-version-check', '--prefix=' + self.target] + self.whls
-            cmd_line = ['-q', '--disable-pip-version-check'] + self.whls
+            cmd_line = ['--disable-pip-version-check'] + self.whls
             self._installer(cmd_line)
 
-    def _installer(self, cmd_line, force=False):
+    def _installer(self, cmd_line):
         # general method to run the installation
         # prepend the python call
-        if not force and not cmd_line[:4] == ['python', '-m', 'pip', 'install']:
+        logger.debug(cmd_line)
+        if not cmd_line[-1].endswith('.py') and not cmd_line[:4] == ['python', '-m', 'pip', 'install']:
             cmd_line = ['python', '-m', 'pip', 'install'] + cmd_line
         if self.target:
             environ = os.environ.copy()
             environ['PYTHONUSERBASE'] = self.target
             # dealing with PYTHONHOME
             if self.pythonhome:
-                environ['PYTHONHOME'] = pythonhome
+                environ['PYTHONHOME'] = self.pythonhome
             # special case for qgis
             elif 'qgis' in sys.executable.lower():
                 pythonhome = os.path.dirname(os.path.dirname(sys.executable))
                 pythonhome = os.path.join(pythonhome, 'apps' + os.sep + self.python_version)
                 environ['PYTHONHOME'] = pythonhome
+            
             # TODO review this case
             else:
                 try:
                     del environ['PYTHONHOME']
                 except KeyError:
                     pass
-            cmd_line = cmd_line + ['--user', '--upgrade', '--force-reinstall']
+            
+            if not cmd_line[-1].endswith('.py'):
+                cmd_line = cmd_line + ['--user', '--upgrade', '--force-reinstall']
         else:
             environ = os.environ.copy()
         
@@ -406,14 +479,21 @@ class Installer(object):
                 env=environ,
                 executable=sys.executable,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 cwd=os.getcwd()
             )
-            # wait for it to complete
-            installer.wait()
+
+            while True:
+                nextline = installer.stdout.readline().decode("utf-8").replace('\n', '')
+                if nextline == '' and installer.poll() is not None:
+                    break
+                if nextline != '':
+                    logger.debug(nextline)
+            installer.poll()
+                # wait for it to complete
             # something went wrong
             if installer.returncode > 0:
-                raise RuntimeError(str(installer.stderr.read()))
+                raise RuntimeError(str(installer.stdout.read()))
 
         return
 
@@ -518,6 +598,7 @@ if __name__ == '__main__':
     parser.add_argument('-w', '--whls', type=str, nargs='+', default=False, help='list of wheels name to install')
     parser.add_argument('-p', '--pkgs', type=str, nargs='+', default=False, help='list of package name to install')
     parser.add_argument('-y', '--yaml', type=str, default=False, help='path to yaml file containing requirements to install')
+    parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', default=False, help='run the installation with logging level set to DEBUG output')
     parser.add_argument('--dry-run', dest='dry_run', action='store_true', default=False, help='dry run only')
     parser.add_argument('--pythonhome', type=str, default=False, help='option to define a custom python home to allow full support for non default python installations')
     args = parser.parse_args()
@@ -533,6 +614,7 @@ if __name__ == '__main__':
             print(path)
 
     else:
-        if args.dry_run:
+        if args.dry_run or args.verbose:
             logger.level = logging.DEBUG
+            
         Installer(target=args.target, whls=args.whls, pkgs=args.pkgs, yaml=args.yaml, dry_run=args.dry_run, pythonhome=args.pythonhome)
