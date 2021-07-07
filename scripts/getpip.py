@@ -26,6 +26,7 @@ import shutil
 import sys
 import struct
 import tempfile
+import site
 
 # Useful for very coarse version differentiation.
 PY2 = sys.version_info[0] == 2
@@ -113,15 +114,18 @@ def bootstrap(tmpdir=None):
         implicit_wheel = False
 
     # Check if the user has requested us not to install wheel
-    # if "--target" in args:
-    #     import site
-    #     for n, a in enumerate(args):
-    #         if a == "--target":
-    #             target = args[n+1]
-    #             print('Installing pip in ' + target)
-    #             del args[n+1]
-    #             del args[n]
-    #     site.USER_BASE = target
+    if "--target" in args:
+        for n, a in enumerate(args):
+            if a == "--target":
+                target = args[n+1]
+                del args[n+1]
+                del args[n]
+    else:
+        target = os.path.dirname(sys.executable)
+
+    print('Installing pip in ' + target)
+    site.USER_BASE = target
+    site.USER_SITE = os.path.join(target, 'site-packages')
 
     # We only want to implicitly install setuptools and wheel if they don't
     # already exist on the target platform.
@@ -158,14 +162,14 @@ def bootstrap(tmpdir=None):
 
     # Add any implicit installations to the end of our args
     if implicit_pip:
-        args += ["pip==9.0.1"]
+        args += ["pip"]
     if implicit_setuptools:
         args += ["setuptools"]
     if implicit_wheel:
         args += ["wheel"]
 
     # Add our default arguments
-    args = ["install", "--upgrade", "--force-reinstall", "--no-cache"] + args
+    args = ["install", "--prefix={0}".format(site.getuserbase()), "--upgrade", "--force-reinstall", "--no-cache"] + args
 
     delete_tmpdir = False
     try:
@@ -184,6 +188,7 @@ def bootstrap(tmpdir=None):
         # Execute the included pip and use it to install the latest pip and
         # setuptools from PyPI
         pip._internal.main(args)
+
     finally:
         # Remove our temporary directory
         if delete_tmpdir and tmpdir:
@@ -195,6 +200,7 @@ def main():
     try:
         # Create a temporary working directory
         tmpdir = tempfile.mkdtemp()
+
 
         # Unpack the zipfile into the temporary directory
         pip_zip = os.path.join(tmpdir, "pip.zip")
