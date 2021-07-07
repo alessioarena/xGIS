@@ -12,3 +12,15 @@
 
 # Build folder
 build_utils/Build/*
+
+# wheels
+*.whl
+wheels/*
+
+# toolboxes files
+*.pyt
+*.ui
+*requirements.yml
+
+# zip files
+*.zip
