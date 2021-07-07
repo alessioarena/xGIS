@@ -16,8 +16,6 @@ except NameError:
     basestring = (str, bytes)
 
 
-# def copy_files(source, destination, )
-
 class Builder():
     supported_tags = ['name', 'version', 'include_data', 'exclude_data', 'remap_folders', 'ArcGIS_support', 'QGIS_support', 'Python_embedded', 'build_folder', 'Python_version', 'installer_script', 'splash_screen']
     runtime_dir = False
@@ -36,7 +34,7 @@ class Builder():
 
         # moving to the right directory
         self.runtime_dir = os.path.dirname(os.path.abspath(__file__))
-        self.root_dir = os.path.dirname(self.runtime_dir)
+        self.root_dir = os.path.dirname(os.path.dirname(self.runtime_dir))
         logging.info('  Moving to {0}'.format(self.root_dir))
         os.chdir(self.root_dir)
 
