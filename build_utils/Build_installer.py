@@ -3,7 +3,7 @@ import os
 import sys
 import logging
 import glob
-from shutil import copyfile, rmtree
+from shutil import copyfile, rmtree, unpack_archive
 from distutils.spawn import find_executable
 import subprocess
 logging.basicConfig(format='%(levelname)7s %(message)s', level=10)
@@ -19,7 +19,7 @@ except NameError:
 # def copy_files(source, destination, )
 
 class Builder():
-    supported_tags = ['name', 'version', 'include_data', 'exclude_data', 'remap_folders', 'ArcGIS_support', 'QGIS_support', 'build_folder', 'Python_version', 'installer_script', 'splash_screen']
+    supported_tags = ['name', 'version', 'include_data', 'exclude_data', 'remap_folders', 'ArcGIS_support', 'QGIS_support', 'Python_embedded', 'build_folder', 'Python_version', 'installer_script', 'splash_screen']
     runtime_dir = False
     root_dir = False
     target_dir = False
@@ -32,15 +32,16 @@ class Builder():
 
         self.read_options()
 
-        logging.info(' Begin to build {0} version {1}'.format(self.options['name'], self.options['version']))
+        logging.info('  Begin to build {0} version {1}'.format(self.options['name'], self.options['version']))
 
         # moving to the right directory
         self.runtime_dir = os.path.dirname(os.path.abspath(__file__))
-        self.root_dir = os.path.dirname(os.path.dirname(self.runtime_dir))
+        self.root_dir = os.path.dirname(self.runtime_dir)
         logging.info('  Moving to {0}'.format(self.root_dir))
         os.chdir(self.root_dir)
 
         # sort out build folders
+        logging.info('  Root folder: {0}'.format(self.root_dir))
         if 'build_folder' in self.options.keys() and self.options['build_folder'] is not None:
             self.build_dir = os.path.join(self.root_dir, self.options['build_dir'])
         else:
@@ -114,10 +115,22 @@ class Builder():
         else:
             qgis = 0
 
+        # check for a python executable to embed with the toolbox
+        if self.options['Python_embedded']:
+            python_embedded_path = os.path.join(self.root_dir, self.options['Python_embedded'])
+            if os.path.isfile(python_embedded_path):
+                # extract the python to the temporary folder to repack it later
+                unpack_archive(python_embedded_path, os.path.join(self.target_dir, 'python_embedded'))
+                embedded = 1
+            else:
+                raise FileNotFoundError("Could not find the python version to embed at: {0}".format(python_embedded_path))
+        else:
+            embedded = 0
+
         # check for wrong settings
         if arcgis + qgis == 0:
             raise RuntimeError("You need to select at least one of 'ArcGIS_support' or 'QGIS_support'")
-        if self.options['Python_version'] == 3 and arcgis == 1:
+        if self.options['Python_version'] == 3 and arcgis == 1 and not self.options['Python_embedded']:
             raise NotImplementedError("Currently there is no support for ArcGIS and Python 3")
 
         # check for installer script and copy it
@@ -142,6 +155,7 @@ class Builder():
                     name=self.options['name'],
                     arcgis=arcgis,
                     qgis=qgis,
+                    embedded=embedded,
                     version=str(self.options['version']),
                     python=str(self.options['Python_version']),
                     installer=installer_script,

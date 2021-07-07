@@ -1,29 +1,35 @@
 
-# all paths are relative to one folder above xGIS (considered root). This is the expected folder structure
-# TOOLBOX_NAME                          [root_dir]
-# |-- toolbox.pyt
-# |-- qgis_toolbox.py
-# |-- setup.bat                         { optional installer script}
-# |-- python_module
-# |   |-- file_one.py
-# |   `-- file_two.py
-# |-- xgis
-# |   |-- build_utils                  [runtime_dir]
-# |   |   |-- Build_installer.py
-# |   |   |-- config_template.txt
-# |   |   |-- build_config.yaml
-# |   |   |-- 7zsd_All_x64.sfx
-# |   |   |-- setup.bat                {default installer script}
-# |   |   `-- Build                    [build_dir ]
-# |   |       |-- xGIS
-# |   |       |   `-- TOOLBOX_NAME     [target_dir]
-# |   |       |-- config.txt           {automatically generated config}
-# |   |       `-- Installer.7z         {automatically compressed toolbox files}
-# |   |-- core
-# |   `-- scripts
-# |-- python_module.whl
-# |-- qgis_interface.ui
-# |-- ...
+# all paths are relative to the xGIS folder (considered root). This is the expected folder structure
+# [root_dir]           xGIS
+#                      |-- toolbox.pyt                    <--- ArcGIS toolbox file
+#                      |-- qgis_toolbox.py                <--- QGIS toolbox file
+#                      |-- qgis_interface.ui              <--- QGIS toolbox interface
+#                      |-- ...
+#                      |-- python_module                  <--- your module
+#                          |-- file_one.py
+#                          `-- file_two.py
+#                      |-- core                           <--- This is xGIS
+#                          |-- __init__.py
+#                          |-- _version.py
+#                          |-- executor.py
+#                          `-- log_utils.py
+# [runtime_dir]        |-- build_utils
+#                          |-- Build_installer.py
+#                          |-- config_template.txt
+#                          |-- build_config.yaml
+#                          |-- 7zsd_All_x64.sfx
+#                          |-- setup.bat
+# [build_dir ]             `-- Build
+#                              |-- xGIS                  <--- This is how your toolbox will look like once installed
+# [target_dir]                 |   `-- TOOLBOX_NAME
+#                              |-- config.txt            <--- This is the automatically generated config file for the self-extracting archive
+#                              `-- Installer.exe         <--- This is your installer generated after running Build_installer.py
+#                      |-- scripts
+#                          |-- getpip.py
+#                          `-- setup_external_libs.py
+#                      |-- wheels
+#                          |-- python_module.whl
+
 
 # Installation process
 # the installation process will go through 2 steps that can be controlled using the respective build parameters and scripts associated with them
@@ -38,8 +44,8 @@
 
 
 # General info
-name: ArcpyExtensions
-version: 0.8
+name: HouseLossModel
+version: 0.1
 
 # Package build options
 build_folder: # ['', path/relative/to/root] # path to use for the build (temporary files)
@@ -47,25 +53,23 @@ installer_script: setup.bat # ['', path/relative/to/root, 'setup.bat'] # script 
 
 # setup.bat options
 ArcGIS_support: True # [True, False]
-QGIS_support: True # [True, False]
-Python_version: 2  # ['', 2, 3] # for backend scripts
-splash_screen: Welcome.html # ['', path/relative/to/root/.html] # If specified will open the given html upon successful installation
+QGIS_support: False # [True, False]
+Python_embedded: python-3.8.10-embed-amd64.zip #['', path/relative/to/root/.zip] # option to embed a python version with the toolbox, please see https://docs.python.org/3.5/using/windows.html#embedded-distribution
+Python_version: 3  # ['', 2, 3] # for backend scripts
+splash_screen: '' # ['', path/relative/to/root/.html] # If specified will open the given html upon successful installation
 
 # Folders (and files) to include.
 include_data: # list of files and folders to include
   # default values for most projects
-  .: # to include the entire root folder
-  arctools:
-  media:
-  xgis:
-    core: # to include specific files in a folder
-      - __init__.py
-      - _version.py
-      - executor.py
-      - log_utils.py
-    scripts:
-      - setup_external_libs.py
-      - getpip.py
+  # .: # to include the entire root folder
+  core: # to include specific files in a folder
+    - __init__.py
+    - _version.py
+    - executor.py
+    - log_utils.py
+  scripts:
+  wheels:
+    - "*.whl"
   # here add you additional packages
 
 # Folders (and files) to exclude. If the folder in not in include_data it will not have effect
@@ -75,14 +79,13 @@ exclude_data:
     - .gitignore
     - .gitmodules
     - "*.pyc"
-  arctools:
-    - "*.pyc"
+    - "*.zip" # if we have an embedded python zip file, this will be handled separately
   # here add your files to exclude
 
 # folders to be remapped. Paths are relative to the root folder. If the folder is not in include_data it will not have effect
 remap_folders:
   # default values for most projects
-  xgis:
-    core: xgis\
-    scripts: .\
+  core: xgis\
+  scripts: .\
+  wheels: .\
   # here add your folders to remap

@@ -4,7 +4,9 @@ SETLOCAL ENABLEDELAYEDEXPANSION
 SET ERRORLEVEL=
 
 CD %~dp0
-if "%ARCGISSUPPORT%"=="1" (
+if "%PYTHONEMBEDDED%" == "1" (
+    SET EXECUTABLE="python_embedded/python.exe"
+) else if "%ARCGISSUPPORT%"=="1" (
     FOR /F "tokens=* USEBACKQ" %%F IN (`python.exe setup_external_libs.py --find_arcgis_env --major 10 --bit 64 `) DO ( SET EXECUTABLE="%%F" )
 ) else (
     if "%PYTHONVERSION%"=="2" (
