@@ -7,17 +7,18 @@ from queue import Queue, Empty
 from threading import Thread
 from distutils.spawn import find_executable
 from time import sleep
+from . import embedded_python_path  #this is to support embedded python, will be False if none is found
 try:
-    import arcpy
+    import arcpy # noqa
 except ImportError:
     pass
 
 try:
-    import qgis
+    import qgis # noqa
 except ImportError:
     pass
 from . import log_utils
-module_logger = log_utils.initialise_logger(to_file=False, force=True)
+module_logger = log_utils.logger
 
 # for python 2 and python 3 compatibility
 try:
@@ -243,12 +244,15 @@ class Executor(object):
             self.executable = None
         # if we want the dafault one
         elif executable is False:
-            try:
-                # search for the one closest to the library os
-                self.executable = self.find_py_exe(False)
-            except RuntimeError:
-                # if we don't find one, try using sys.executable (this fails in ArcMap)
-                self.executable = sys.executable
+            if embedded_python_path:
+                self.executable = embedded_python_path
+            else:
+                try:
+                    # search for the one closest to the library os
+                    self.executable = self.find_py_exe(False)
+                except RuntimeError:
+                    # if we don't find one, try using sys.executable (this fails in ArcMap)
+                    self.executable = sys.executable
         else:
             raise TypeError("The executable argument must be a string, None or False")
 
@@ -706,6 +710,7 @@ class Executor(object):
         out : str
             full path of python executable
         """
+
         if w_exe:
             exe = ['pythonw.exe']
         else:
