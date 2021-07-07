@@ -561,6 +561,8 @@ class Executor(object):
             # all good!
             logger.info('   ***** SubProcess Completed *****')
             logger.info('   ******* powered by xGIS ********')
+            logger.info('   ******* check it out at ********')
+            logger.info('  https://github.com/alessioarena/xGIS')
 
         if len(results) > 0:
             return results
