@@ -24,3 +24,8 @@ wheels/*
 
 # zip files
 *.zip
+
+# certification keys
+*.key
+*.crt
+*.pfx
