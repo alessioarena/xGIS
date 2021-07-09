@@ -124,18 +124,21 @@ class Installer(object):
         for root, dirs, files in os.walk(python_path):
             for f in files:
                 if f.endswith('_pth'):
-                    logger.warning('Found a pth file in you local installation. This may be modified to allow path manipulations')
+                    pth_moved = f + 'bkp'
                     pth_file = os.path.join(root, f)
-                    to_add = False
-                    with open(pth_file, 'r') as fl:
-                        for line in fl.readlines():
-                            if line == 'import site':
-                                break
-                        else:
-                            to_add=True
-                    if to_add:
-                        with open(pth_file, 'a') as fl:
-                            fl.write('import site') # this fixes the environmental lock
+
+                    logger.warning('Found a pth file in you local installation. This is not compatible with xGIS and will be renamed to ' + pth_moved)
+                    shutil.move(pth_file, os.path.join(root, pth_moved))
+                    # to_add = False
+                    # with open(pth_file, 'r') as fl:
+                    #     for line in fl.readlines():
+                    #         if line == 'import site':
+                    #             break
+                    #     else:
+                    #         to_add=True
+                    # if to_add:
+                    #     with open(pth_file, 'a') as fl:
+                    #         fl.write('import site') # this fixes the environmental lock
 
         self.path.append(python_path)
         self.path.append(os.path.join(python_path, 'Lib{0}site-packages'.format(os.sep)))
