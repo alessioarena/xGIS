@@ -7,7 +7,6 @@ from queue import Queue, Empty
 from threading import Thread
 from distutils.spawn import find_executable
 from time import sleep
-from . import embedded_python_path  #this is to support embedded python, will be False if none is found
 try:
     import arcpy # noqa
 except ImportError:
@@ -28,6 +27,12 @@ except NameError:
     # python 3
     basestring = (str, bytes)
 
+#this is to support embedded python, will be False if none is found
+embedded_python_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'python_embedded{0}python.exe'.format(os.sep))
+if os.path.isfile(embedded_python_path):
+    pass
+else:
+    embedded_python_path = False
 
 class ExternalExecutionError(Exception):
     # custom error for abnormal process termination
@@ -206,7 +211,7 @@ class Executor(object):
         # testing both the 'local' path and the 'working directory' one
         for d in [os.path.abspath(dir), os.path.join(self.cwd, dir)]:
             if test(d):
-                return d
+                return str(d)
         else:
             raise IOError("The argument '{0}' is not pointing to a valid {1}".format(dir, test_str))
 
