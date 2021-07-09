@@ -515,5 +515,6 @@ def silence_logger(func):
 # this is to pin the logger associated with this module, and retrieve it later
 logger = logging.getLogger('xGIS/log_utils')
 logging.captureWarnings(True)
-if not logger.hasHandlers():
+if len(logger.handlers) == 0:
     initialise_logger()
+
