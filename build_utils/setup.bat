@@ -16,12 +16,6 @@ if "%PYTHONEMBEDDED%" == "1" (
     )
 )
 
-REM FOR /L %%i IN (6,-1,1) DO (
-REM     IF EXIST C:\Python27\ArcGISx6410.%%i%\python.exe (
-REM         SET EXECUTABLE=C:\Python27\ArcGISx6410.%%i%\python.exe
-REM     )
-REM )
-
 
 if defined EXECUTABLE (
     @ECHO Installing additional libraries. This may take some times depending on your system
@@ -40,7 +34,7 @@ if defined EXECUTABLE (
             popd
         )
         @ECHO Installation Successful!
-        if NOT "%SPLASHSCREEN%"=="None" (
+        if NOT "%SPLASHSCREEN%"=="" (
             start %SPLASHSCREEN%
         )
         
