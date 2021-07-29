@@ -2,8 +2,23 @@
 
 SETLOCAL ENABLEDELAYEDEXPANSION
 SET ERRORLEVEL=
-
 CD %~dp0
+
+
+@REM Check that we have MSBuild Installed
+SET MSBUILD_EXE=
+for /f "usebackq tokens=*" %%i in (`vswhere -latest -products * -requires Microsoft.Component.MSBuild Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -find MSBuild\**\Bin\MSBuild.exe`) do (
+    SET "MSBUILD_EXE=%%i"
+)
+if "%MSBUILD_EXE%" == "" (
+    @ECHO MS Visual Studio Build Tools are missing from your system. Please install them and try again
+    @PAUSE
+    EXIT /b 2
+) else (
+    @ECHO Found a MS Visual Studio Build Tools version at "%MSBUILD_EXE%"
+    SET "PATH=!PATH!;!MSBUILD_EXE:~0,-12!;!MSBUILD_EXE:~0,-12!\amd64"
+)
+
 if "%PYTHONEMBEDDED%" == "1" (
     SET EXECUTABLE="python_embedded/python.exe"
 ) else if "%ARCGISSUPPORT%"=="1" (
@@ -16,11 +31,14 @@ if "%PYTHONEMBEDDED%" == "1" (
     )
 )
 
-
 if defined EXECUTABLE (
     @ECHO Installing additional libraries. This may take some times depending on your system
     @ECHO Running %EXECUTABLE% setup_external_libs.py
-    %EXECUTABLE% setup_external_libs.py --yaml requirements.yml
+    IF "%PYTHONEMBEDDED%" == "1" (
+        %EXECUTABLE% setup_external_libs.py --yaml requirements.yml -v --target False
+    ) ELSE (
+        %EXECUTABLE% setup_external_libs.py --yaml requirements.yml -v
+    )
     if ERRORLEVEL 1 (
         @ECHO.
         @ECHO Installation Failed!
