@@ -47,7 +47,7 @@
 
 
 # General info
-name: HouseLossModel
+name: CSIRO_HouseLossModel
 version: 0.1
 
 # Package build options
@@ -57,7 +57,10 @@ installer_script: setup.bat # ['', path/relative/to/root, 'setup.bat'] # script 
 # setup.bat options
 ArcGIS_support: True # [True, False]
 QGIS_support: False # [True, False]
-Python_embedded: xgis/python-3.8.10-embed-amd64.zip #['', path/relative/to/root/.zip] # option to embed a python version with the toolbox, please see https://docs.python.org/3.5/using/windows.html#embedded-distribution
+# option to embed a python version with the toolbox, please see https://docs.python.org/3.5/using/windows.html#embedded-distribution
+# IMPORTANT installing libraries that require compiling/building wheels may not be supported as embeddable Python do not come with Python.h and other resources to include at compilation
+# in that case it is reccomended that you provide precompiled wheels to setup_external_libs.py (for example from https://www.lfd.uci.edu/~gohlke/pythonlibs/
+Python_embedded: xgis/python-3.8.10-embed-amd64.zip #['', path/relative/to/root/.zip]
 Python_version: 3  # ['', 2, 3] # for backend scripts
 splash_screen: '' # ['', path/relative/to/root/.html] # If specified will open the given html upon successful installation
 
@@ -71,6 +74,7 @@ include_data: # list of files and folders to include
       - _version.py
       - executor.py
       - log_utils.py
+      - arctoolbox.py
     scripts:
     wheels:
       - "*.whl"
