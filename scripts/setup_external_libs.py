@@ -1,4 +1,4 @@
-import os
+import os, re
 import shutil
 import sys
 import logging
@@ -6,6 +6,8 @@ import subprocess
 import pkgutil
 import site
 from shutil import rmtree
+from queue import Queue, Empty
+from threading import Thread
 # initialise logger
 logging.basicConfig(level=logging.INFO, format='%(levelname)8s   %(message)s')
 logging.captureWarnings(True)
@@ -28,6 +30,7 @@ except NameError:
 
 # installer runtime object
 class Installer(object):
+    verbose = 0
     whls = False
     pkgs = False
     yaml = False
@@ -39,17 +42,22 @@ class Installer(object):
     supported_version_cmp = ['===', '~=', '!=', '==', '<=', '>=', '<', '>']
 
     # initialise and run
-    def __init__(self, target=False, pkgs=False, whls=False, yaml=False, dry_run=False, pythonhome=False):
+    def __init__(self, target=False, pkgs=False, whls=False, yaml=False, dry_run=False, pythonhome=False, verbose=0):
         logger.info('Building environment for {0} located in {1}'.format(self.python_version, os.path.dirname(os.path.dirname(os.__file__))))
         try:
+            if isinstance(verbose, int) and verbose >=0 and verbose <=2:
+                self.verbose = verbose
             # Input checking
-            if target:
-                if isinstance(target, basestring):
-                    self.target = target
-                    self.lib_folder = os.path.join(os.path.abspath(self.target), '{0}{1}site-packages'.format(self.python_version, os.sep))
-                    logger.info('Target folder is ' + self.lib_folder)
-                else:
-                    raise TypeError("'target' must be a string")
+            if isinstance(target, basestring):
+                self.target = os.path.abspath(self.target)
+                self.lib_folder = os.path.join(self.target, '{0}{1}site-packages'.format(self.python_version, os.sep))
+                logger.info('Target folder is ' + self.lib_folder)
+            elif target is False:
+                self.target = False
+                self.lib_folder = os.path.join(os.path.dirname(sys.executable), '{0}{1}site-packages'.format("Lib", os.sep))
+            else:
+                raise TypeError("'target' must be a string")
+
             if not any([yaml, pkgs, whls]):
                 raise RuntimeError("At least one of 'yaml, 'pkgs', 'whls' is required")
             else:
@@ -84,7 +92,7 @@ class Installer(object):
 
             # check wether you have already all the required packages installed in the target folder
             # if os.path.exists(self.target) and (len(os.listdir(self.lib_folder)) > (len(self.whls) + len(self.pkgs))):
-            if os.path.exists(self.target):
+            if self.target:
                 logger.info('Checking whether requirements are already satisfied')
                 test, missing = self.test_environment()
                 if test:
@@ -145,15 +153,14 @@ class Installer(object):
         self.path.append(os.path.join(python_path, 'Scripts'))
         self.path.append(os.path.join(python_path, 'bin'))
         self.path.append(os.path.join(python_path, 'include'))
+        self.path.append(self.lib_folder)
+        # self.path.append(self.target)
 
         logger.debug('self.path is: {0}'.format(self.path))
         if 'PYTHONPATH' not in os.environ:
-            pythonpath = [self.path[0]]
+            pythonpath = [self.path[0], self.lib_folder]
         else:
-            pythonpath = os.environ['PYTHONPATH'].split(';')
-        for p in reversed(self.path):
-            if p not in pythonpath:
-                pythonpath.insert(0, p)
+            pythonpath = [self.path[0], self.lib_folder] + os.environ['PYTHONPATH'].split(';')
 
         os.environ['PYTHONPATH'] = ';'.join(pythonpath)
 
@@ -218,10 +225,10 @@ class Installer(object):
             logger.info('Could not find a pip version associated with this python executable. Retrieving and installing the latest version...')
             getpip_path = os.path.join(os.path.dirname(__file__), 'getpip.py')
             self._installer(['python', getpip_path])
-
+            site.addsitedir(self.lib_folder) #TODO not sure on how this behave
             # # making sure that we keep the current PYTHONUSERBASE path in our path
             # site.addsitedir(os.path.join(os.path.abspath(self.target), '{0}{1}site-packages'.format(self.python_version, os.sep)))
-            site.addsitedir(os.path.join(os.path.dirname(sys.executable), 'Lib{0}site-packages'.format(os.sep)))
+            # site.addsitedir(os.path.join(os.path.dirname(sys.executable), 'Lib{0}site-packages'.format(os.sep)))
 
             # logger.warning('Pip succesfully installed. You may have to rerun this script in order to have it working properly')
 
@@ -238,7 +245,8 @@ class Installer(object):
             cmd_line = ['pyyaml']
             self._installer(cmd_line)
             # add the new path to load yaml
-            site.addsitedir(os.path.join(os.path.abspath(self.target), '{0}{1}site-packages'.format(self.python_version, os.sep)))
+            site.addsitedir(self.lib_folder) #TODO not sure on how this behave
+            # site.addsitedir(os.path.join(os.path.abspath(self.target), '{0}{1}site-packages'.format(self.python_version, os.sep)))
         try:
             import yaml
         except ImportError:
@@ -271,7 +279,8 @@ class Installer(object):
             cmd_line = ['-q', 'pkg_resources']
             self._installer(cmd_line)
             # add the new path to load pkg_resources
-            site.addsitedir(os.path.join(os.path.abspath(self.target), '{0}{1}site-packages'.format(self.python_version, os.sep)))
+            # site.addsitedir(os.path.join(os.path.abspath(self.target), '{0}{1}site-packages'.format(self.python_version, os.sep)))
+            site.addsitedir(self.lib_folder) #TODO not sure on how this behave
         try:
             import pkg_resources as pkg_r
         except ImportError:
@@ -432,23 +441,21 @@ class Installer(object):
         # method to install python packages using pip
         if self.pkgs and len(self.pkgs) > 0:
             cmd_line = ['--disable-pip-version-check'] + self.pkgs
-            # cmd_line = ['-q', '--disable-pip-version-check', '--no-cache-dir', '--target'] + [self.target] + self.pkgs
             self._installer(cmd_line)
 
     def install_whls(self):
         # method to install wheels using pip
         if self.whls and len(self.whls) > 0:
-            # cmd_line = ['-q', '--disable-pip-version-check', '--prefix=' + self.target] + self.whls
             cmd_line = ['--disable-pip-version-check'] + self.whls
             self._installer(cmd_line)
 
-    def _installer(self, cmd_line):
+    def _installer(self, cmd_line, ignore_target=False):
         # general method to run the installation
         # prepend the python call
         logger.debug(cmd_line)
         if not cmd_line[-1].endswith('.py') and not cmd_line[:4] == ['python', '-m', 'pip', 'install']:
             cmd_line = ['python', '-m', 'pip', 'install'] + cmd_line
-        if self.target:
+        if self.target and not ignore_target:
             environ = os.environ.copy()
             environ['PYTHONUSERBASE'] = self.target
             # dealing with PYTHONHOME
@@ -468,7 +475,11 @@ class Installer(object):
                     pass
             
             if not cmd_line[-1].endswith('.py'):
-                cmd_line = cmd_line + ['--user', '--upgrade', '--force-reinstall']
+                cmd_line = cmd_line + ['--user', '--upgrade', '--force-reinstall', '--no-warn-script-location', '--no-cache-dir']
+                if self.verbose == 1:
+                    cmd_line += ['-v']
+                elif self.verbose == 2:
+                    cmd_line += ['-vv']
         else:
             environ = os.environ.copy()
         
@@ -482,23 +493,64 @@ class Installer(object):
                 env=environ,
                 executable=sys.executable,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                stderr=subprocess.PIPE,
                 cwd=os.getcwd()
             )
 
-            while True:
-                nextline = installer.stdout.readline().decode("utf-8").replace('\n', '')
-                if nextline == '' and installer.poll() is not None:
-                    break
-                if nextline != '':
-                    logger.debug(nextline)
-            installer.poll()
-                # wait for it to complete
-            # something went wrong
-            if installer.returncode > 0:
-                raise RuntimeError(str(installer.stdout.read()))
+        # queue for asyncronous message parsing
+        log_queue = Queue()
+        # this thread will monitor the stdout of the external process and append messages to the queue
+        stdout_thread = Thread(target=self._print_stream, args=(installer.stdout, log_queue, 0))
+        stdout_thread.setDaemon(True)
+        stdout_thread.start()
+        stderr_thread = Thread(target=self._print_stream, args=(installer.stderr, log_queue, 1))
+        stderr_thread.setDaemon(True)
+        stderr_thread.start()
+        while True:
+            # try to retrieve a message from the queue, but if it is empty keep going
+            try:
+                o, e = log_queue.get_nowait()
+                if bool(o):
+                    logger.debug('{0}'.format(o))
+                if bool(e):
+                    logger.warning({'{0}'.format(e)})
+            except Empty:
+                pass
 
+            # the external executing is completed
+            if installer.poll() is not None:
+                break
+
+        # check the return code for abnormal values
+        if installer.returncode > 0:
+            raise RuntimeError("Unexpected Error")
         return
+
+    # internal printer generator used in _stream_handler
+    @staticmethod
+    def _print_stream(stream, log_queue=False, position=0):
+        # this is a non-blocking generator that monitors the stream till it reaches the end (end of execution)
+        if stream:
+
+            # commpile an ad-hoc function to read lines from stream and convert them if necessary
+            # this is to support Python 2 (returns strings i.e. "") and Python3 (returns byte i.e. b"")
+            def _line_converter():
+                line = stream.readline()
+                if hasattr(line, 'decode'):
+                    line = line.decode('utf-8').rstrip('\n')
+                return line
+
+            # if we have a queue, use that to pass the messages
+            if log_queue is not False:
+                for line in iter(_line_converter, ""):
+                    out = ['', '']
+                    out[position] = line
+                    log_queue.put(out)
+            # otherwise we assume that the stream is now closed and we just need to read the lines
+            # return an iterator to use with for loop
+            else:
+                return [(line, '') for line in iter(_line_converter, "")]
+
 
 def _find_best_version(options, major=False, minor=False, bit=False):
     newer_version = {
@@ -586,6 +638,15 @@ def find_qgis_env(major=False, minor=False, bit=False, python_version=False):
 if __name__ == '__main__':
     import argparse
 
+    def strORbool(val):
+        if isinstance(val, bool):
+            pass
+        elif val.lower() in ('yes', 'true'):
+            val = True
+        elif val.lower() in ('no', 'false'):
+            val = False
+        return val
+
     utility_parser = argparse.ArgumentParser(add_help=False)
     utility_group = utility_parser.add_argument_group('Utilities')
     utility_group.add_argument('--find_arcgis_env', action='store_true', default=False, help='Finds and returns the path of the requested ArcGIS Python environment')
@@ -597,11 +658,12 @@ if __name__ == '__main__':
 
 
     parser = argparse.ArgumentParser(description='Utility to install dependencies locally', parents=[utility_parser])
-    parser.add_argument('-t', '--target', type=str, default='external_libs', help='Folder name to use as target location for the installation')
+    parser.add_argument('-t', '--target', type=strORbool, default='external_libs', help='Folder name to use as target location for the installation')
     parser.add_argument('-w', '--whls', type=str, nargs='+', default=False, help='list of wheels name to install')
     parser.add_argument('-p', '--pkgs', type=str, nargs='+', default=False, help='list of package name to install')
     parser.add_argument('-y', '--yaml', type=str, default=False, help='path to yaml file containing requirements to install')
     parser.add_argument('-v', '--verbose', dest='verbose', action='store_true', default=False, help='run the installation with logging level set to DEBUG output')
+    parser.add_argument('-vv', '--veryverbose', action='store_true', default=False, help='run the installation with logging level set to DEBUG output plus parse the -vv option to pip')
     parser.add_argument('--dry-run', dest='dry_run', action='store_true', default=False, help='dry run only')
     parser.add_argument('--pythonhome', type=str, default=False, help='option to define a custom python home to allow full support for non default python installations')
     args = parser.parse_args()
@@ -617,7 +679,12 @@ if __name__ == '__main__':
             print(path)
 
     else:
-        if args.dry_run or args.verbose:
+        verbose = 0
+        if args.verbose:
+            verbose = 1
+        if args.veryverbose:
+            verbose = 2
+        if args.dry_run or verbose > 0:
             logger.level = logging.DEBUG
             
-        Installer(target=args.target, whls=args.whls, pkgs=args.pkgs, yaml=args.yaml, dry_run=args.dry_run, pythonhome=args.pythonhome)
+        Installer(target=args.target, whls=args.whls, pkgs=args.pkgs, yaml=args.yaml, dry_run=args.dry_run, pythonhome=args.pythonhome, verbose=verbose)
