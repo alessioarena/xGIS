@@ -104,14 +104,18 @@ class Builder():
         # check for ArcGIS support
         if self.options['ArcGIS_support']:
             arcgis = 1
+            arcgis_require = " - ArcGIS >= 10.5 with ArcGIS Background Geoprocessing (x64)\n"
         else:
+            arcgis_require = ""
             arcgis = 0
 
         # check for QGIS support
         if self.options['QGIS_support']:
             qgis = 1
+            qgis_require = " - QGIS\n"
         else:
             qgis = 0
+            qgis_require = ""
 
         # check for a python executable to embed with the toolbox
         if self.options['Python_embedded']:
@@ -141,6 +145,7 @@ class Builder():
             else:
                 raise IOError("Could not find the installer script: {0}. Make sure to place it in the toolbox directory".format(installer_script))
             copyfile(installer, os.path.join(self.target_dir, installer_script))
+            copyfile(os.path.join(self.runtime_dir, 'vswhere.exe'), os.path.join(self.target_dir, 'vswhere.exe'))
             installer_script = 'xGIS\\\\{0}\\\\{1}'.format(self.options['name'], installer_script)
         else:
             installer_script = ''
@@ -152,7 +157,9 @@ class Builder():
                 config_text.format(
                     name=self.options['name'],
                     arcgis=arcgis,
+                    arcgis_require=arcgis_require,
                     qgis=qgis,
+                    qgis_require=qgis_require,
                     embedded=embedded,
                     version=str(self.options['version']),
                     python=str(self.options['Python_version']),
