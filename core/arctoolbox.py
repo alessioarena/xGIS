@@ -3,13 +3,12 @@ import sys
 import re
 import winreg
 import logging
+import json
 
 try:
     import arcpy
 except Exception:
     raise ImportError('Could not find the arcpy module. Are you running this toolbox from ArcGIS?')
-
-
 
 class ArcToolbox(object):
     logger = None
@@ -18,7 +17,7 @@ class ArcToolbox(object):
     tools = []
     toolbox_version_file__ = ''
     version__ = ''
-    Tool_Parameter_State = {}
+    # ToolParameterState = {}
 
     # stored_parameters_file = os.path.join(os.path.expanduser("~"), 'xGISparameters.txt')
     def __init__(self):
@@ -33,6 +32,9 @@ class ArcToolbox(object):
         self.toolbox_repository__
 
         self.logger
+
+    def __delete__(self):
+        self.del_user_env()
 
     # this method is used to memorize runtime parameters in an internal dictionary
     @classmethod
@@ -54,16 +56,16 @@ class ArcToolbox(object):
                     cls.logger.info("  {0}: {1} {2}".format(parameter.name, parameter.valueAsText, type(parameter.value)))
                 except UnicodeEncodeError:
                     cls.logger.info("  {0}: {1} {2}".format(parameter.name, parameter.valueAsText.encode('utf-8'), type(parameter.value)))
-        cls.Tool_Parameter_State[tool] = stored_parameters
+        cls.ToolParameterState[tool] = stored_parameters
         cls.logger.info("*" * len(intro))
     # this method is used to get the parameters from the dictionary and use them as default for the GUI
     @classmethod
     def retrieve_parameters(cls, tool, parameter_list):
-        if tool not in cls.Tool_Parameter_State.keys():
+        if tool not in cls.ToolParameterState.keys():
             return
         intro = "** Retrieving " + tool + " parameters **"
         cls.logger.info(intro)
-        stored_parameters = cls.Tool_Parameter_State[tool]
+        stored_parameters = cls.ToolParameterState[tool]
         for index, parameter in enumerate(parameter_list):
             if stored_parameters[index] is not None:
                 parameter.value = stored_parameters[index][0]
@@ -85,38 +87,116 @@ class ArcToolbox(object):
             else:
                 return None
         else:
-            cls.logger.info(value)
             cls.set_user_env(key, value)
 
-    @classmethod
-    def manage_parameters(cls, update_parms_func):
-        def do_manage(tool, parameters):
 
-            if all([ not p.hasBeenValidated for p in parameters]):
-                cls.retrieve_parameters(tool.__class__.__name__, parameters)
-            else:
+    @classmethod
+    def manage_parameters(cls, input_store_key=None):
+        # this is a factory
+        def manage_parameters_decorator(update_parms_func):
+            if update_parms_func.__name__ != 'updateParameters':
+                raise ValueError("this decorator can be used only for the 'updateParameters' method")
+            def do_manage(tool, parameters):
+                if all([ not p.hasBeenValidated for p in parameters]):
+                    cls.logger.info("retrieve previous output")
+                    if input_store_key is not None:
+                        input_parms = []
+                        if isinstance(input_store_key, (str, unicode)):
+                            in_keys = [input_store_key]
+                        else:
+                            in_keys = input_store_key
+                        if isinstance(in_keys, list):
+                            for n, k in enumerate(in_keys):
+                                p = cls.manage_output(k)
+                                input_parms.append(p)
+                                parameters[n].value = p
+                        elif isinstance(in_keys, dict) and all([isinstance(k, int) for k in in_keys.keys()]) and all([isinstance(v, str) for v in in_keys.values()]):
+                            for k, v in in_keys.items():
+                                p = cls.manage_output(v)
+                                input_parms.append(p)
+                                parameters[k].value = p
+                        else:
+                            raise TypeError("Could not manage parameters. input_store_key is expected to be a str, list of str or dict of int:str")
+                    # if input_store_key is None or all([p is None for p in input_parms]):
+                    #     cls.retrieve_parameters(tool.__class__.__name__, parameters)
+                    else:
+                        cls.logger.info("No previous parameter to load, fresh start")
                 update_parms_func(tool, parameters)
 
-            # this is executed when you press the RUN button
-            if all([p.hasBeenValidated for p in parameters]):
-                cls.store_parameters(tool.__class__.__name__, parameters)
-            return 
-        return do_manage
+                # this is executed when you press the RUN button
+                # if all([p.hasBeenValidated for p in parameters]):
+                #     cls.store_parameters(tool.__class__.__name__, parameters)
+                return 
+            return do_manage
+        return manage_parameters_decorator
 
     @classmethod
-    def manage_execution(cls, execute_func):
-        def do_manage(tool, parameters, messages):
-            cls.logger.info('Running ' + cls.pckg_name__ + ' version ' + cls.version__ + ' released on ' + str(cls.release_date__))
-            vc = cls.check_version()
-            if vc:
-                cls.logger.warning('You are running an old toolbox version. A newer one ({0}) is available for download at {1}'.format('.'.join(vc), cls.toolbox_repository__))
-            cls.logger.info('__Starting ' + tool.__class__.__name__ + '__')
+    def manage_execution(cls, output_store_key=None):
+        def manage_execution_decorator(func):
+            if func.__name__ != 'execute':
+                raise ValueError("this decorator can be used only for the 'execute' method")
+            def do_manage(tool, parameters, messages):
+                cls.logger.info('Running ' + cls.pckg_name__ + ' version ' + cls.version__ + ' released on ' + str(cls.release_date__))
+                vc = cls.check_version()
+                if vc:
+                    cls.logger.warning('You are running an old toolbox version. A newer one ({0}) is available for download at {1}'.format('.'.join(vc), cls.toolbox_repository__))
+                cls.logger.info('__Starting ' + tool.__class__.__name__ + '__')
 
-            outname = execute_func(tool, parameters, messages)
-            if outname and parameters[-1].direction == 'Output':
-                arcpy.SetParameter(len(parameters) - 1, outname)
-            return
-        return do_manage
+                output = func(tool, parameters, messages)
+                if output and parameters[-1].direction == 'Output':
+                    arcpy.SetParameter(len(parameters) - 1, output)
+
+                if output_store_key is not None:
+                    if isinstance(output_store_key, str):
+                        out_keys = [output_store_key]
+                    else:
+                        out_keys = output_store_key #BUG if overwriting the same variable it complains about being undefined (probably gets lost in this function scope?!)
+                    if not isinstance(output, (list, tuple)):
+                        output = [output]
+                    if isinstance(out_keys, list):
+                        if len(out_keys) != len(output):
+                            raise RuntimeError("Could not manage output. Expected {0} output but received {1}".format(len(out_keys), len(output)))
+                        else:
+                            for o, k in zip(output, out_keys):
+                                cls.manage_output(k, o)
+                return
+            return do_manage
+        return manage_execution_decorator
+
+    @classmethod
+    def manage_required_parameters(cls, control_parameter_idx=None, required_indices=[]):
+        def manage_required_parameters_decorator(func):
+            if func.__name__ != 'updateMessages':
+                raise ValueError("this decorator can be used only for the 'updateMessages' method")
+            def do_manage(tool, parameters):
+                if not isinstance(control_parameter_idx, int) or control_parameter_idx>len(parameters) or control_parameter_idx < 0:
+                    raise TypeError("Control_parameter must be a valid parameter index ")
+                control_parameter = parameters[control_parameter_idx]
+                try:
+                    control_options = control_parameter.filter.list
+                    if len(control_options) == 0:
+                        raise AttributeError
+                except AttributeError:
+                    if control_parameter.datatype == 'GPBoolean':
+                        control_options = [True, False]
+                    else:
+                        raise ValueError("Control_parameter must have a value filter set or being Boolean")
+
+                if not isinstance(required_indices, (list, tuple)) or any([not isinstance(l, (list, tuple)) for l in required_indices]):
+                    raise TypeError("required_indices must be a list of lists")
+                
+                if len(control_options) != len(required_indices):
+                    raise ValueError("number of options in the control_parameter and number of list of required parameters must be the same")
+
+                for control, required in zip(control_options, required_indices):
+                    if control_parameter.value == control:
+                        for r in required:
+                            if not parameters[r].altered or not parameters[r].value:
+                                parameters[r].setIDMessage("ERROR", 735, parameters[r].displayName)
+                func(tool, parameters)
+                return
+            return do_manage
+        return manage_required_parameters_decorator
 
 
     @classmethod
@@ -151,7 +231,7 @@ class ArcToolbox(object):
         out : str
             variable value
         """
-        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Environment")
+        key = winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, r"xGIS", 0, winreg.KEY_READ)
         try:
             return winreg.QueryValueEx(key, name)[0]
         except WindowsError:
@@ -170,11 +250,22 @@ class ArcToolbox(object):
         value : str
             variable value
         """
-        key = winreg.CreateKey(winreg.HKEY_CURRENT_USER, r"Environment")
+        key = winreg.CreateKeyEx(winreg.HKEY_CURRENT_USER, r"xGIS", 0, winreg.KEY_SET_VALUE)
         try:
             winreg.SetValueEx(key, name, 0, winreg.REG_SZ, value)
         finally:
             winreg.CloseKey(key)
+
+    @staticmethod
+    def del_user_env(name=None):
+        try:
+            if name is None:
+                winreg.DeleteKeyEx(winreg.HKEY_CURRENT_USER, r"xGIS", winreg.KEY_ALL_ACCESS, 0)
+            else:
+                key = winreg.OpenKeyEx(winreg.HKEY_CURRENT_USER, r"xGIS", 0, winreg.KEY_SET_VALUE)
+                winreg.DeleteValue(key, name)
+        except WindowsError:
+            pass
 
     @staticmethod
     def parameter_has_been_modified(param):
@@ -182,6 +273,8 @@ class ArcToolbox(object):
             return True
         else:
             return False
+
+
 
     @staticmethod
     def parse_multivalues(param):
@@ -229,7 +322,12 @@ class ArcToolbox(object):
             return [str(x.name) for x in arcpy.ListFields(value) if not x.name in exclude]
 
     @staticmethod
-    def get_outname(source, suffix, optional_ext, dirpath=False, extract_basename_root=False):
+    def list_unique_field_values(table, field):
+        with arcpy.da.SearchCursor(table, [field]) as cursor:
+            return sorted({row[0] for row in cursor})
+
+    @staticmethod
+    def get_outname(source, suffix, optional_ext, dirpath=False, extract_basename_root=False, overwrite=False):
         """Absolute dirpath to save the output.
         The directory is retrieved from source
         if source has a name following part1_part2_part3, part1 will be preserved as prefix
@@ -282,6 +380,11 @@ class ArcToolbox(object):
         basename = os.path.splitext(re.sub('[-!@#$%^&()]', '_', os.path.basename(meta_path)))[0]
         if extract_basename_root:
             basename = basename.split('_')[0]
+
+        name_suffix = basename.split('_')[-1]
+        if suffix!= '' and name_suffix.startswith(suffix):
+            basename = '_'.join(basename.split('_')[:-1])
+
         # dealing with path
         if dirpath is False:
             # the user wants to save in the same location of the input file
@@ -309,4 +412,15 @@ class ArcToolbox(object):
         elif not optional_ext.startswith('.'):
             optional_ext = '.' + optional_ext
 
-        return os.path.normpath(''.join([dirpath, basename, suffix, optional_ext]))
+        if overwrite:
+            return os.path.normpath(''.join([dirpath, basename, suffix, optional_ext]))
+        else:
+            count = 0
+
+            while True:
+                path = os.path.normpath(''.join([dirpath, basename, suffix] + ['' if count == 0 else str(count)] + [optional_ext]))
+                if os.path.exists(path):
+                    count += 1
+                else:
+                    break
+            return path
