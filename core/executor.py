@@ -4,7 +4,7 @@ import re
 import logging
 import subprocess
 from queue import Queue, Empty
-from threading import Thread
+from threading import Thread, Event
 from distutils.spawn import find_executable
 from time import sleep
 try:
@@ -39,6 +39,19 @@ class ExternalExecutionError(Exception):
     def __init__(self, message, errno=1):
         super(ExternalExecutionError, self).__init__(message)
         self.errno = errno
+
+
+def terminate_gracefully(popen, log_queue, cancel_event):
+    cancel_event.wait()
+    popen.terminate()
+    for i in range(1000):
+        if popen.poll() is not None:
+            log_queue.put(('   ***** SubProcess Terminated *****', ''))
+            break
+        sleep(0.01)
+    else:
+        popen.kill()
+        log_queue.put(('   ***** SubProcess Killed *****', ''))
 
 
 # to support Qgis background task system
@@ -502,23 +515,19 @@ class Executor(object):
                 self.logger.info('Task {0} scheduled'.format(self.task_id))
         else:
             # start the non-blocking subprocess
+
             run = subprocess.Popen(
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                shell=False,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP,
                 **popen_args
             )
 
             self.logger.info('   ***** SubProcess Started *****')
-            try:
                 # monitor the process in parallel, printing the output stream as it comes
-                result = self._stream_handler(run, self.logger, cancel_test)
-            except KeyboardInterrupt:  # handle user cancellation
-                run.kill()
-                self.logger.info('   ***** SubProcess Killed *****')
-                raise
+            result = self._stream_handler(run, self.logger, cancel_test)
             return result
-
-
 
     # internal handler that monitors stdout, cancels the job following user request and print stderr as required
     def _stream_handler(self, popen, logger, cancel_test):
@@ -532,10 +541,18 @@ class Executor(object):
         producer_thread = Thread(target=self._print_stream, args=(popen.stdout, log_queue))
         producer_thread.setDaemon(True)
         producer_thread.start()
+
+        # this thread will act on the cancellation event
+        is_cancelling = False
+        cancel_event = Event()
+        killer_thread = Thread(target=terminate_gracefully, args=(popen, log_queue, cancel_event))
+        killer_thread.setDaemon(True)
+        killer_thread.start()
+
         while True:
             # try to retrieve a message from the queue, but if it is empty keep going
             try:
-                l, r = log_queue.get_nowait()
+                l, r = log_queue.get(timeout=0.2)
                 if bool(l):
                     logger.info('   {0}'.format(l))
                 elif bool(r):
@@ -544,11 +561,26 @@ class Executor(object):
                 pass
 
             # test for user cancellation asyncronously
-            if cancel_test():
+            if (not is_cancelling) and cancel_test():
                 logger.warning('   Detected user cancellation')
-                raise KeyboardInterrupt
+                is_cancelling = True
+                cancel_event.set()
+
             # the external executing is completed
             if popen.poll() is not None:
+                # the cancellation was completed
+                if is_cancelling:
+                    raise KeyboardInterrupt
+                break
+
+        while True:
+            try:
+                l, r = log_queue.get(timeout=0.2)
+                if bool(l):
+                    logger.info('   {0}'.format(l))
+                elif bool(r):
+                    results.extend(r)
+            except Empty:
                 break
 
         # check the return code for abnormal values
