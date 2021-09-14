@@ -107,6 +107,8 @@ class ArcToolbox(object):
                             in_keys = input_store_key
                         if isinstance(in_keys, list):
                             for n, k in enumerate(in_keys):
+                                if k is None:
+                                    continue
                                 p = cls.manage_output(k)
                                 input_parms.append(p)
                                 parameters[n].value = p
@@ -143,10 +145,10 @@ class ArcToolbox(object):
                 cls.logger.info('__Starting ' + tool.__class__.__name__ + '__')
 
                 output = func(tool, parameters, messages)
-                if output and parameters[-1].direction == 'Output':
+                if output and parameters[-1].parameterType == 'Derived' and not parameters[-1].value:
                     arcpy.SetParameter(len(parameters) - 1, output)
 
-                if output_store_key is not None:
+                if output_store_key is not None and output:
                     if isinstance(output_store_key, str):
                         out_keys = [output_store_key]
                     else:
@@ -177,10 +179,10 @@ class ArcToolbox(object):
                     if len(control_options) == 0:
                         raise AttributeError
                 except AttributeError:
-                    if control_parameter.datatype == 'GPBoolean':
+                    if control_parameter.datatype in ['GPBoolean', 'Boolean']:
                         control_options = [True, False]
                     else:
-                        raise ValueError("Control_parameter must have a value filter set or being Boolean")
+                        raise ValueError("Control_parameter must have a value filter set or being Boolean, not {0}".format(control_parameter.datatype))
 
                 if not isinstance(required_indices, (list, tuple)) or any([not isinstance(l, (list, tuple)) for l in required_indices]):
                     raise TypeError("required_indices must be a list of lists")
